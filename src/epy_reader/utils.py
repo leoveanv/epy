@@ -4,13 +4,25 @@ import re
 import sys
 import textwrap
 from functools import wraps
-from typing import List, Mapping, Optional, Sequence, Tuple, Union
+from typing import List, Mapping, Optional, Sequence, Tuple, Union, cast
 
 from epy_reader.ebooks import URL, Azw, Ebook, Epub, FictionBook, Mobi
 from epy_reader.lib import is_url, tuple_subtract
-from epy_reader.models import Key, LettersCount, NoUpdate, ReadingState, TextStructure, TocEntry
+from epy_reader.models import (
+    Key,
+    LettersCount,
+    NoUpdate,
+    ReadingState,
+    TextStructure,
+    TocEntry,
+)
 from epy_reader.parser import parse_html
-from epy_reader.speakers import SpeakerBaseModel, SpeakerMimic, SpeakerPico, SpeakerGttsMPV
+from epy_reader.speakers import (
+    SpeakerBaseModel,
+    SpeakerGttsMPV,
+    SpeakerMimic,
+    SpeakerPico,
+)
 
 
 def get_ebook_obj(filepath: str) -> Ebook:
@@ -32,7 +44,7 @@ def get_ebook_obj(filepath: str) -> Ebook:
 def safe_curs_set(state: int) -> None:
     try:
         curses.curs_set(state)
-    except:
+    except curses.error:
         return
 
 
@@ -257,7 +269,7 @@ def text_win(textfunc):
         textw.keypad(True)
         textw.addstr(1, 2, title)
         textw.addstr(2, 2, "-" * len(title))
-        key_textw: Union[NoUpdate, Key] = NoUpdate()
+        key_textw = cast(Union[NoUpdate, Key], NoUpdate())
 
         totlines = len(texts)
 
@@ -308,6 +320,8 @@ def merge_text_structures(
         image_maps={**text_structure_first.image_maps, **text_structure_second.image_maps},
         section_rows={**text_structure_first.section_rows, **text_structure_second.section_rows},
         formatting=text_structure_first.formatting + text_structure_second.formatting,
+        documents=text_structure_first.documents + text_structure_second.documents,
+        source_cells=text_structure_first.source_cells + text_structure_second.source_cells,
     )
 
 
@@ -346,8 +360,8 @@ def construct_relative_reading_state(
 
 
 def count_letters(ebook: Ebook) -> LettersCount:
-    per_content_counts: List[int] = []
-    cumulative_counts: List[int] = []
+    per_content_counts = cast(List[int], [])
+    cumulative_counts = []
     # assert isinstance(ebook.contents, tuple)
     for i in ebook.contents:
         content = ebook.get_raw_text(i)

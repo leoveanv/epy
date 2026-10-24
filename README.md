@@ -8,7 +8,7 @@
 
 CLI Ebook Reader.
 
-This is just a fork of [epr](https://github.com/wustho/epr) with these extra features:
+A fork of [epy](https://github.com/wustho/epy), originally based on [epr](https://github.com/wustho/epr). Features include:
 
 - Supported formats:
   - Epub (.epub, .epub3)
@@ -24,32 +24,28 @@ This is just a fork of [epr](https://github.com/wustho/epr) with these extra fea
 - [Double Spread](#double-spread)
 - Seamless (disabled by default, read [below](#reading-tips-using-epy))
 
+## This fork: highlights and notes
+
+This fork adds persistent keyboard highlights, margin notes, and one-way export to an Obsidian Markdown file for local EPUBs.
+
+Press `v` to select a passage, `a` to manage annotations, and uppercase `O` to link a Markdown destination.
+
+See [annotation usage and setup](docs/annotations.md).
+
 ## Installation
 
-- Via PyPI (Linux and Mac OS)
+Install this fork with Python 3.12:
 
-  ```shell
-  pip3 install epy-reader
-  ```
+```shell
+python3.12 -m venv .venv
+.venv/bin/python -m pip install git+https://github.com/leoveanv/epy.git
+.venv/bin/epy "/path/to/book.epub"
+```
 
-- Via Pip+Git
-
-  ```shell
-  pip3 install git+https://github.com/wustho/epy
-  ```
-
-- Via AUR
-
-  ```shell
-  yay -S epy-ereader-git
-  ```
-
-- Windows Binary
-
-  Standalone binary for Windows is available at [release page](https://github.com/wustho/epy/releases).
+The PyPI package `epy-reader` installs upstream epy without this fork's annotation features.
 
 ## Usage
-- `epy /path/to/your/book/book.epub` (Remember to make sure your book's title doesn't contain any spaces)
+- `epy "/path/to/your/book.epub"`
 - **c** Switching the color profile
 - **Shift + h** Previous chapter
 - **Shift + l** Next chapter

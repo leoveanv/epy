@@ -1,8 +1,11 @@
 import os
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Mapping, Optional, Tuple, Union
+from typing import Any, Mapping, Optional, Sequence, Tuple, Union
+
+from epy_reader.annotations.text import SourceCell, SourceDocument
 
 
 class Direction(Enum):
@@ -38,7 +41,6 @@ class LibraryItem:
             reading_progress_str = f"{int(self.reading_progress * 100)}%"
         reading_progress_str = reading_progress_str.rjust(4)
 
-        book_name: str
         filename = self.filepath.replace(os.path.expanduser("~"), "~", 1)
         if self.title is not None and self.author is not None:
             book_name = f"{self.title} - {self.author} ({filename})"
@@ -179,6 +181,15 @@ class TextStructure:
     image_maps: Mapping[int, str]
     section_rows: Mapping[str, int]
     formatting: Tuple[InlineStyle, ...]
+    documents: Tuple[SourceDocument, ...] = ()
+    source_cells: Tuple[SourceCell, ...] = ()
+
+
+@dataclass(frozen=True)
+class LoadedBookContent:
+    text_structure: TextStructure
+    toc_entries: Tuple[TocEntry, ...]
+    contents: Sequence[Union[str, ET.Element]]
 
 
 @dataclass(frozen=True)
@@ -211,7 +222,7 @@ class AppData:
     @property
     def prefix(self) -> Optional[str]:
         """Return None if there exists no homedir | userdir"""
-        prefix: Optional[str] = None
+        prefix = None
 
         # UNIX filesystem
         homedir = os.getenv("HOME")

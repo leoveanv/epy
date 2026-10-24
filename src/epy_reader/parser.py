@@ -1,12 +1,17 @@
 import curses
 import dataclasses
 import re
-import textwrap
 from html import unescape
 from html.parser import HTMLParser
-from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
+from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union, cast
 from urllib.parse import unquote
 
+from epy_reader.annotations.text import (
+    SourceDocument,
+    cell_width,
+    map_paragraph,
+    wrap_text,
+)
 from epy_reader.models import CharPos, InlineStyle, TextMark, TextSpan, TextStructure
 
 
@@ -37,7 +42,7 @@ class HTMLtoLines(HTMLParser):
         Convert text marks in line of text to per line text span.
         Keeping duplicate spans.
         """
-        spans: List[TextSpan] = []
+        spans = []
         for mark in marks:
             if mark.is_valid():
                 # mypy issue, should be handled by mark.is_valid()
@@ -84,7 +89,7 @@ class HTMLtoLines(HTMLParser):
         end_col = start_col + span.n_letters
 
         prev = 0  # chars length before current line
-        spans: List[TextSpan] = []
+        spans = []
         for n, line in enumerate(wrapped_lines):
             # + 1 compensates textwrap.wrap(*args, replace_whitespace=True, drop_whitespace=True)
             line_len = len(line) + 1
@@ -136,7 +141,7 @@ class HTMLtoLines(HTMLParser):
 
     @staticmethod
     def _group_spans_by_row(blocks: Sequence[TextSpan]) -> Mapping[int, List[TextSpan]]:
-        groups: Dict[int, List[TextSpan]] = {}
+        groups = cast(Dict[int, List[TextSpan]], {})
         for block in blocks:
             row = block.start.row
             if row in groups:
@@ -160,9 +165,9 @@ class HTMLtoLines(HTMLParser):
         self.idimgs = set()
         self.sects = sects
         self.sectsindex = {}
-        self.italic_marks: List[TextMark] = []
-        self.bold_marks: List[TextMark] = []
-        self.imgs: Dict[int, str] = dict()
+        self.italic_marks = []
+        self.bold_marks = []
+        self.imgs = dict()
 
     def handle_starttag(self, tag, attrs):
         if re.match("h[1-6]", tag) is not None:
@@ -282,24 +287,30 @@ class HTMLtoLines(HTMLParser):
                 self.idpref.add(len(self.text) - 1)
 
     def get_structured_text(
-        self, textwidth: Optional[int] = 0, starting_line: int = 0
+        self, textwidth: Optional[int] = 0, starting_line: int = 0, content_id: str = ""
     ) -> Union[Tuple[str, ...], TextStructure]:
 
         if not textwidth:
             return tuple(self.text)
 
-        text: List[str] = []
-        images: Dict[int, str] = dict()  # {line_num: path/in/zip}
-        sect: Dict[str, int] = dict()  # {section_id: line_num}
-        formatting: List[InlineStyle] = []
+        text = cast(List[str], [])
+        images = dict()  # {line_num: path/in/zip}
+        sect = dict()  # {section_id: line_num}
+        formatting = []
 
-        italic_spans: List[TextSpan] = HTMLtoLines._mark_to_spans(self.text, self.italic_marks)
-        bold_spans: List[TextSpan] = HTMLtoLines._mark_to_spans(self.text, self.bold_marks)
+        italic_spans = HTMLtoLines._mark_to_spans(self.text, self.italic_marks)
+        bold_spans = HTMLtoLines._mark_to_spans(self.text, self.bold_marks)
         italic_groups = HTMLtoLines._group_spans_by_row(italic_spans)
         bold_groups = HTMLtoLines._group_spans_by_row(bold_spans)
 
-        for n, line in enumerate(self.text):
-
+        paragraphs = [
+            line.expandtabs().replace("\r", " ").replace("\v", " ").replace("\f", " ")
+            for line in self.text
+        ]
+        document = SourceDocument(content_id=content_id, text="\n".join(paragraphs))
+        source_cells = []
+        source_offset = 0
+        for n, line in enumerate(paragraphs):
             startline = len(text)
             # findsect = re.search(r"(?<= \(#).*?(?=\) )", line)
             # if findsect is not None and findsect.group() in self.sects:
@@ -310,7 +321,7 @@ class HTMLtoLines(HTMLParser):
                 sect[self.sectsindex[n]] = starting_line + len(text)
             if n in self.idhead:
                 # text += [line.rjust(textwidth // 2 + len(line) // 2)] + [""]
-                text += [line.center(textwidth)] + [""]
+                text += [line.rjust((textwidth - cell_width(line)) // 2 + len(line))] + [""]
                 formatting += [
                     InlineStyle(
                         row=starting_line + i, col=0, n_letters=len(text[i]), attr=self.attr_bold
@@ -318,15 +329,15 @@ class HTMLtoLines(HTMLParser):
                     for i in range(startline, len(text))
                 ]
             elif n in self.idinde:
-                text += ["   " + i for i in textwrap.wrap(line, textwidth - 3)] + [""]
+                text += ["   " + i for i in wrap_text(line, textwidth - 3)] + [""]
             elif n in self.idbull:
-                tmp = textwrap.wrap(line, textwidth - 3)
+                tmp = wrap_text(line, textwidth - 3)
                 text += [" - " + i if i == tmp[0] else "   " + i for i in tmp] + [""]
             elif n in self.idpref:
                 tmp = line.splitlines()
                 wraptmp = []
                 for tmp_line in tmp:
-                    wraptmp += [i for i in textwrap.wrap(tmp_line, textwidth - 6)]
+                    wraptmp += [i for i in wrap_text(tmp_line, textwidth - 6)]
                 text += ["   " + i for i in wraptmp] + [""]
             elif n in self.idimgs:
                 images[starting_line + len(text)] = self.imgs[n]
@@ -341,9 +352,22 @@ class HTMLtoLines(HTMLParser):
                 ]
                 text += [""]
             else:
-                text += textwrap.wrap(line, textwidth) + [""]
+                text += wrap_text(line, textwidth) + [""]
 
             endline = len(text)  # -1
+            if n not in self.idimgs:
+                indentation = 3 if n in self.idbull | self.idinde | self.idpref else 0
+                source_cells.extend(
+                    map_paragraph(
+                        document,
+                        source_offset,
+                        line,
+                        text[startline:endline],
+                        starting_line + startline,
+                        indentation,
+                    )
+                )
+            source_offset += len(line) + 1
 
             left_adjustment = 3 if n in self.idbull | self.idinde else 0
 
@@ -389,6 +413,8 @@ class HTMLtoLines(HTMLParser):
             image_maps=images,
             section_rows=sect,
             formatting=tuple(formatting),
+            documents=(document,),
+            source_cells=tuple(source_cells),
         )
 
 
@@ -398,6 +424,7 @@ def parse_html(
     textwidth: Optional[int] = None,
     section_ids: Optional[Set[str]] = None,
     starting_line: int = 0,
+    content_id: str = "",
 ) -> Union[Tuple[str, ...], TextStructure]:
     """
     Parse html string into TextStructure
@@ -418,4 +445,4 @@ def parse_html(
     # except:
     #     pass
 
-    return parser.get_structured_text(textwidth, starting_line)
+    return parser.get_structured_text(textwidth, starting_line, content_id)

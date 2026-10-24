@@ -13,9 +13,10 @@ import tempfile
 import uuid
 import xml.etree.ElementTree as ET
 from html import unescape
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union, cast
 
 import epy_reader.settings as settings
+from epy_reader.annotations.ui import AnnotationController
 from epy_reader.board import InfiniBoard
 from epy_reader.config import Config
 from epy_reader.ebooks import Azw, Ebook, Epub, Mobi
@@ -25,6 +26,7 @@ from epy_reader.models import (
     InlineStyle,
     Key,
     LettersCount,
+    LoadedBookContent,
     NoUpdate,
     ReadingState,
     SearchData,
@@ -49,13 +51,28 @@ from epy_reader.utils import (
     text_win,
 )
 
-
 # TODO: to be deprecated
 DEBUG = False
 
 
 class Reader:
-    def __init__(self, screen, ebook: Ebook, config: Config, state: State):
+    is_color_supported: bool
+    page_animation: Optional[Direction]
+    show_reading_progress: bool
+    reading_progress: Optional[float]
+    search_data: Optional[SearchData]
+    jump_list: Dict[str, ReadingState]
+    _tts_speaker: Optional[SpeakerBaseModel]
+    tts_support: bool
+    is_speaking: bool
+    _multiprocess_support: bool
+    _process_counting_letter: Optional[multiprocessing.Process]
+    letters_count: Optional[LettersCount]
+    _ext_dict_app: Optional[str]
+    _image_viewer: Optional[str]
+    totlines_per_content: Tuple[int, ...]
+
+    def __init__(self, screen: curses.window, ebook: Ebook, config: Config, state: State) -> None:
 
         self.setting = config.setting
         self.keymap = config.keymap
@@ -84,7 +101,7 @@ class Reader:
         self.screen.clear()
 
         # screen color
-        self.is_color_supported: bool = False
+        self.is_color_supported = False
         try:
             curses.use_default_colors()
             curses.init_pair(1, self.setting.DefaultColorFG, self.setting.DefaultColorBG)
@@ -92,7 +109,7 @@ class Reader:
             curses.init_pair(3, self.setting.LightColorFG, self.setting.LightColorBG)
             self.screen.bkgd(curses.color_pair(1))
             self.is_color_supported = True
-        except:
+        except (curses.error, ValueError):
             self.is_color_supported = False
 
         # show loader and start heavy resources processes
@@ -111,34 +128,35 @@ class Reader:
 
         # state
         self.state = state
+        self.annotations = AnnotationController(screen, ebook, config, state.filepath)
 
         # page scroll animation
-        self.page_animation: Optional[Direction] = None
+        self.page_animation = None
 
         # show reading progress
-        self.show_reading_progress: bool = self.setting.ShowProgressIndicator
-        self.reading_progress: Optional[float] = None  # calculate after count_letters()
+        self.show_reading_progress = self.setting.ShowProgressIndicator
+        self.reading_progress = None  # calculate after count_letters()
 
         # search storage
-        self.search_data: Optional[SearchData] = None
+        self.search_data = None
 
         # double spread
         self.spread = 2 if self.setting.StartWithDoubleSpread else 1
 
         # jumps marker container
-        self.jump_list: Dict[str, ReadingState] = dict()
+        self.jump_list = dict()
 
         # TTS speaker utils
-        self._tts_speaker: Optional[SpeakerBaseModel] = construct_speaker(
+        self._tts_speaker = construct_speaker(
             self.setting.PreferredTTSEngine, self.setting.TTSEngineArgs
         )
-        self.tts_support: bool = bool(self._tts_speaker)
-        self.is_speaking: bool = False
+        self.tts_support = bool(self._tts_speaker)
+        self.is_speaking = False
 
         # multi process & progress percentage
-        self._multiprocess_support: bool = False if multiprocessing.cpu_count() == 1 else True
-        self._process_counting_letter: Optional[multiprocessing.Process] = None
-        self.letters_count: Optional[LettersCount] = None
+        self._multiprocess_support = False if multiprocessing.cpu_count() == 1 else True
+        self._process_counting_letter = None
+        self.letters_count = None
 
     def run_counting_letters(self):
         if self._multiprocess_support:
@@ -192,7 +210,7 @@ class Reader:
 
     @property
     def ext_dict_app(self) -> Optional[str]:
-        self._ext_dict_app: Optional[str] = None
+        self._ext_dict_app = None
 
         if shutil.which(self.setting.DictionaryClient.split()[0]):
             self._ext_dict_app = self.setting.DictionaryClient
@@ -208,7 +226,7 @@ class Reader:
 
     @property
     def image_viewer(self) -> Optional[str]:
-        self._image_viewer: Optional[str] = None
+        self._image_viewer = None
 
         if shutil.which(self.setting.DefaultViewer.split()[0]) is not None:
             self._image_viewer = self.setting.DefaultViewer
@@ -246,7 +264,7 @@ class Reader:
             os.remove(path)
         return k
 
-    def show_loader(self, *, loader_str: str = "\u231B", subtext: Optional[str] = None):
+    def show_loader(self, *, loader_str: str = "\u231b", subtext: Optional[str] = None):
         self.screen.clear()
         rows, cols = self.screen.getmaxyx()
         middle_row = (rows - 1) // 2
@@ -371,7 +389,7 @@ class Reader:
         rows, cols = self.screen.getmaxyx()
         stat = curses.newwin(1, cols, rows - 1, 0)
         if self.is_color_supported:
-            stat.bkgd(self.screen.getbkgd())
+            stat.bkgd(cast(int, self.screen.getbkgd()))
         stat.keypad(True)
         curses.echo(True)
         safe_curs_set(2)
@@ -437,19 +455,11 @@ class Reader:
         self, board: InfiniBoard, src: Sequence[str], reading_state: ReadingState, tot
     ) -> Union[NoUpdate, ReadingState, Key]:
         # reusable loop indices
-        i: Any
-        j: Any
 
         rows, cols = self.screen.getmaxyx()
         # unnecessary
         # if self.spread == 2:
         #     reading_state = dataclasses.replace(reading_state, textwidth=(cols - 7) // 2)
-
-        x = (cols - reading_state.textwidth) // 2
-        if self.spread == 1:
-            x = (cols - reading_state.textwidth) // 2
-        else:
-            x = 2
 
         if not self.search_data:
             candidate_text = self.input_prompt(" Regex:")
@@ -467,8 +477,8 @@ class Reader:
             tmpk = self.show_win_error("!Regex Error", str(reerrmsg), tuple())
             return tmpk
 
-        for n, i in enumerate(src):
-            for j in pattern.finditer(i):
+        for n, text_line in enumerate(src):
+            for j in pattern.finditer(text_line):
                 found.append([n, j.span()[0], j.span()[1] - j.span()[0]])
 
         if not found:
@@ -490,7 +500,7 @@ class Reader:
                     row=0,
                 )
             else:
-                s: Union[NoUpdate, Key] = NoUpdate()
+                s = cast(Union[NoUpdate, Key], NoUpdate())
                 while True:
                     if s in self.keymap.Quit:
                         self.search_data = None
@@ -541,7 +551,7 @@ class Reader:
                     sidx = n
                     break
 
-        s = NoUpdate()
+        s = cast(Union[NoUpdate, Key], NoUpdate())
         msg = (
             " Searching: "
             + self.search_data.value
@@ -631,7 +641,7 @@ class Reader:
 
             # formats = [InlineStyle(row=i[0], col=i[1], n_letters=i[2], attr=curses.A_REVERSE) for i in found]
             # pad.feed_style(formats)
-            styles: List[InlineStyle] = []
+            styles = []
             for n, i in enumerate(found):
                 attr = curses.A_REVERSE if n == sidx else curses.A_NORMAL
                 # pad.chgat(i[0], i[1], i[2], pad.getbkgd() | attr)
@@ -738,26 +748,24 @@ class Reader:
             reading_state, content_index=0, row=absolute_row, rel_pctg=absolute_pctg
         )
 
-    def get_all_book_contents(
-        self, reading_state: ReadingState
-    ) -> Tuple[TextStructure, Tuple[TocEntry, ...], Union[Tuple[str, ...], Tuple[ET.Element, ...]]]:
+    def get_all_book_contents(self, reading_state: ReadingState) -> LoadedBookContent:
         if not self.seamless:
             raise RuntimeError("Reader.get_all_book_contents() only implemented when Seamless=True")
 
         contents = self.ebook.contents
         toc_entries = self.ebook.toc_entries
 
-        text_structure: TextStructure = TextStructure(
+        text_structure = TextStructure(
             text_lines=tuple(), image_maps=dict(), section_rows=dict(), formatting=tuple()
         )
-        toc_entries_tmp: List[TocEntry] = []
-        section_rows_tmp: Dict[str, int] = dict()
+        toc_entries_tmp = []
+        section_rows_tmp = dict()
 
         # self.totlines_per_content only defined when Seamless=True
-        self.totlines_per_content: Tuple[int, ...] = tuple()
+        self.totlines_per_content = tuple()
 
         for n, content in enumerate(contents):
-            self.show_loader(subtext=f"loading contents ({n+1}/{len(contents)})")
+            self.show_loader(subtext=f"loading contents ({n + 1}/{len(contents)})")
             starting_line = sum(self.totlines_per_content)
             assert isinstance(content, str) or isinstance(content, ET.Element)
             text_structure_tmp = parse_html(
@@ -765,6 +773,7 @@ class Reader:
                 textwidth=reading_state.textwidth,
                 section_ids=set(toc_entry.section for toc_entry in toc_entries),  # type: ignore
                 starting_line=starting_line,
+                content_id=str(content),
             )
             assert isinstance(text_structure_tmp, TextStructure)
             # self.totlines_per_content.append(len(text_structure_tmp.text_lines))
@@ -787,11 +796,9 @@ class Reader:
             text_structure, section_rows={**text_structure.section_rows, **section_rows_tmp}
         )
 
-        return text_structure, tuple(toc_entries_tmp), (self.ebook.contents[0],)
+        return LoadedBookContent(text_structure, tuple(toc_entries_tmp), (self.ebook.contents[0],))
 
-    def get_current_book_content(
-        self, reading_state: ReadingState
-    ) -> Tuple[TextStructure, Tuple[TocEntry, ...], Union[Tuple[str, ...], Tuple[ET.Element, ...]]]:
+    def get_current_book_content(self, reading_state: ReadingState) -> LoadedBookContent:
         contents = self.ebook.contents
         toc_entries = self.ebook.toc_entries
         content_path = contents[reading_state.content_index]
@@ -800,15 +807,18 @@ class Reader:
             content,
             textwidth=reading_state.textwidth,
             section_ids=set(toc_entry.section for toc_entry in toc_entries),  # type: ignore
+            content_id=str(content_path),
         )
-        return text_structure, toc_entries, contents
+        assert isinstance(text_structure, TextStructure)
+        return LoadedBookContent(text_structure, toc_entries, contents)
 
     def read(self, reading_state: ReadingState) -> Union[ReadingState, Ebook]:
         # reusable loop indices
-        i: Any
 
         k = self.keymap.RegexSearch[0] if self.search_data else NoUpdate()
         rows, cols = self.screen.getmaxyx()
+        if self.spread == 1 and reading_state.textwidth > cols - 4:
+            reading_state = dataclasses.replace(reading_state, textwidth=max(20, cols - 4))
 
         mincols_doublespr = (
             DoubleSpreadPadding.LEFT.value
@@ -841,12 +851,15 @@ class Reader:
         self.show_loader(subtext="loading contents")
         # get text structure, toc entries and contents of the book
         if self.seamless:
-            text_structure, toc_entries, contents = self.get_all_book_contents(reading_state)
+            loaded_content = self.get_all_book_contents(reading_state)
             # adjustment
             reading_state = self.convert_relative_reading_state_to_absolute(reading_state)
         else:
-            text_structure, toc_entries, contents = self.get_current_book_content(reading_state)
+            loaded_content = self.get_current_book_content(reading_state)
 
+        text_structure = loaded_content.text_structure
+        toc_entries = loaded_content.toc_entries
+        contents = loaded_content.contents
         totlines = len(text_structure.text_lines)
 
         if reading_state.row < 0 and totlines <= rows * self.spread:
@@ -866,9 +879,14 @@ class Reader:
             spread=self.spread,
         )
 
-        letters_per_content: List[int] = []
-        for i in text_structure.text_lines:
-            letters_per_content.append(len(re.sub(r"\s", "", i)))
+        letters_per_content = []
+        for text_line in text_structure.text_lines:
+            # NOTE: Reading progress counts non-whitespace characters in each rendered line.
+            letters_per_content.append(len(re.sub(r"\s", "", text_line)))
+
+        self.annotations.attach(board, text_structure)
+        x = board.x
+        reading_state = self.annotations.restore_jump(reading_state)
 
         self.screen.clear()
         self.screen.refresh()
@@ -883,7 +901,7 @@ class Reader:
                 reading_state, row=text_structure.section_rows.get(reading_state.section, 0)
             )
 
-        checkpoint_row: Optional[int] = None
+        checkpoint_row = None
         countstring = ""
 
         try:
@@ -892,9 +910,26 @@ class Reader:
                     count = 1
                 else:
                     count = int(countstring)
-                if k in tuple(Key(i) for i in range(48, 58)):  # i.e., k is a numeral
+                if isinstance(k, Key) and k in tuple(Key(i) for i in range(48, 58)):
                     countstring = countstring + k.char
                 else:
+                    if isinstance(k, Key) and self.annotations.handles(k):
+                        if self.spread == 2:
+                            self.spread = 1
+                            self.annotations.status = "Annotation mode uses single-column reading."
+                            return dataclasses.replace(
+                                reading_state, rel_pctg=reading_state.row / totlines
+                            )
+                        updated_state = self.annotations.handle(k, reading_state)
+                        if (
+                            updated_state.content_index != reading_state.content_index
+                            or updated_state.textwidth != reading_state.textwidth
+                            or self.annotations.pending_jump is not None
+                            or self.screen.getmaxyx() != (rows, cols)
+                        ):
+                            return updated_state
+                        reading_state = updated_state
+                        k = NoUpdate()
                     if k in self.keymap.Quit:
                         if k == Key(27) and countstring != "":
                             countstring = ""
@@ -911,13 +946,14 @@ class Reader:
 
                     elif k in self.keymap.TTSToggle and self.tts_support:
                         tospeak = ""
-                        for i in text_structure.text_lines[
+                        for spoken_line in text_structure.text_lines[
                             reading_state.row : reading_state.row + (rows * self.spread)
                         ]:
-                            if re.match(r"^\s*$", i) is not None:
+                            # NOTE: Blank lines insert spoken pauses between paragraphs.
+                            if re.match(r"^\s*$", spoken_line) is not None:
                                 tospeak += "\n. \n"
                             else:
-                                tospeak += i + " "
+                                tospeak += spoken_line + " "
                         k = self.speaking(tospeak)
                         if (
                             totlines - reading_state.row <= rows
@@ -1068,7 +1104,8 @@ class Reader:
                                 reading_state = dataclasses.replace(
                                     reading_state,
                                     row=text_structure.section_rows.get(
-                                        toc_entries[ntoc - 1].section, 0  # type: ignore
+                                        toc_entries[ntoc - 1].section or "",
+                                        0,
                                     ),
                                 )
                             else:
@@ -1249,12 +1286,12 @@ class Reader:
                             continue
 
                         imgs_in_screen.sort()
-                        image_path: Optional[str] = None
+                        image_path = None
                         if len(imgs_in_screen) == 1:
                             image_path = text_structure.image_maps[imgs_in_screen[0]]
                         elif len(imgs_in_screen) > 1:
                             imgs_rel_to_row = [i - reading_state.row for i in imgs_in_screen]
-                            p: Union[NoUpdate, Key] = NoUpdate()
+                            p = cast(Union[NoUpdate, Key], NoUpdate())
                             i = 0
                             while p not in self.keymap.Quit and p not in self.keymap.Follow:
                                 self.screen.move(
@@ -1316,7 +1353,7 @@ class Reader:
                         and countstring in {"", "0", "1", "2"}
                     ):
                         if countstring == "":
-                            count_color = curses.pair_number(self.screen.getbkgd())
+                            count_color = curses.pair_number(cast(int, self.screen.getbkgd()))
                             if count_color not in {2, 3}:
                                 count_color = 1
                             count_color = count_color % 3

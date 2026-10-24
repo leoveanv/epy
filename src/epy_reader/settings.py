@@ -40,6 +40,10 @@ class Settings:
     PageScrollAnimation: bool = True
     MouseSupport: bool = False
     StartWithDoubleSpread: bool = False
+    AnnotationNotesWidth: int = 36
+    AnnotationColorFG: int = 223
+    AnnotationColorBG: int = 52
+    AnnotationAsciiConnectors: bool = False
     # -1 is default terminal fg/bg colors
     DefaultColorFG: int = -1
     DefaultColorBG: int = -1
@@ -84,6 +88,9 @@ class CfgDefaultKeymaps:
     TTSToggle: str = "!"
     DoubleSpreadToggle: str = "D"
     Library: str = "R"
+    AnnotationSelect: str = "v"
+    AnnotationList: str = "a"
+    AnnotationLink: str = "O"
 
 
 @dataclass(frozen=True)
@@ -104,6 +111,9 @@ class Keymap:
     # HalfScreenDown: Tuple[Key, ...]
     # HalfScreenUp: Tuple[Key, ...]
     AddBookmark: Tuple[Key, ...]
+    AnnotationSelect: Tuple[Key, ...]
+    AnnotationList: Tuple[Key, ...]
+    AnnotationLink: Tuple[Key, ...]
     BeginningOfCh: Tuple[Key, ...]
     DefineWord: Tuple[Key, ...]
     DoubleSpreadToggle: Tuple[Key, ...]
