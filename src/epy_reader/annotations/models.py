@@ -1,8 +1,8 @@
 """Persistent annotation records and pure anchor resolution."""
 
-from typing import Optional
+from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from epy_reader.annotations.text import SourceDocument
 
@@ -34,12 +34,21 @@ class TextAnchor(FrozenRecord):
         return self
 
 
+class AnnotationReference(FrozenRecord):
+    headings: List[str] = Field(default_factory=list)
+    location: str
+    page_start: Optional[str] = None
+    page_end: Optional[str] = None
+    version: int = 1
+
+
 class Annotation(FrozenRecord):
     id: str
     book_id: str
     anchor: TextAnchor
     note: str = ""
     chapter: str = ""
+    reference: Optional[AnnotationReference] = None
     content_order: int = 0
     created_at: str
     updated_at: str
@@ -51,6 +60,10 @@ class ExportLink(FrozenRecord):
     digest: Optional[str] = None
     revision: int = 0
     exported_revision: int = -1
+
+
+def stable_location(anchor: TextAnchor, content_order: int) -> str:
+    return "Location {}:{}".format(content_order + 1, anchor.start + 1)
 
 
 def resolve_anchor(anchor: TextAnchor, document: SourceDocument) -> Optional[TextAnchor]:

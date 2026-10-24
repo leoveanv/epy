@@ -3,6 +3,7 @@
 from epy_reader.annotations.models import (
     Annotation,
     AnnotationBook,
+    AnnotationReference,
     ExportLink,
     FrozenRecord,
     TextAnchor,
@@ -12,6 +13,7 @@ from epy_reader.annotations.models import (
 __all__ = [
     "Annotation",
     "AnnotationBook",
+    "AnnotationReference",
     "ExportLink",
     "FrozenRecord",
     "TextAnchor",

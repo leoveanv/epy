@@ -19,6 +19,7 @@ python = "^3.8"
 pydantic = ">=2.10,<2.11"
 wcwidth = ">=0.2.13,<0.3"
 regex = ">=2024.11.6,<2025"
+typing-extensions = ">=4.12.2,<5"
 windows-curses = { version = "*", markers = "platform_system == 'Windows'" }
 
 [tool.poetry.dev-dependencies]

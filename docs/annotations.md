@@ -88,6 +88,40 @@ The destination can contain your frontmatter and handwritten notes. epy appends 
 
 Each annotation exports its quotation, optional note, and a stable Obsidian block identifier. Export follows book order rather than creation order.
 
+Highlights group under the story or chapter containing the selected passage, even when several stories share one EPUB document.
+
+Nested headings become nested Markdown headings, which Obsidian can fold. A `---` separator distinguishes each complete highlight/note pair.
+
+When available, references use the book's page labels, including page ranges. Otherwise, `Location D:C` identifies the EPUB document and character offset, both starting at 1.
+
+Locations do not depend on terminal size or text width. They are not estimated print-page numbers.
+
+For example:
+
+```markdown
+### EUGENE
+
+**Location 2:66587**
+
+> First highlighted passage.
+
+^epy-ANNOTATION-UUID
+
+**Note**
+
+My note about this passage.
+
+---
+
+**Location 2:67030**
+
+> Another highlighted passage.
+```
+
+Reopening a book upgrades older annotations when their saved quotations still match. Linked Markdown refreshes automatically, subject to the existing conflict checks.
+
+You can also press `O`, then `r`, to refresh the linked export.
+
 epy exports after linking, saving a highlight, editing a note, or deleting an annotation. Draft keystrokes do not trigger file writes.
 
 Write your own Obsidian content outside the managed section. epy never imports Obsidian edits.

@@ -19,6 +19,53 @@ def annotated_book(tmp_path: Path) -> Tuple[AnnotationStore, AnnotationBook]:
     return store, book
 
 
+def test_export_separates_complete_highlight_note_pairs(
+    tmp_path: Path, annotated_book: Tuple[AnnotationStore, AnnotationBook]
+) -> None:
+    from epy_reader.annotations.export import render_section
+
+    store, book = annotated_book
+    store.create(
+        book.id,
+        TextAnchor(content_id="chapter", start=20, end=26, quote="second"),
+        note="second note",
+    )
+    markdown = render_section(book, store.list_annotations(book.id)).decode()
+    pairs = markdown.split("\n---\n")
+    assert len(pairs) == 2
+    assert "my note" in pairs[0] and "> quote" in pairs[0]
+    assert "second note" in pairs[1] and "> second" in pairs[1]
+
+
+def test_export_renders_page_reference_under_story_header(
+    tmp_path: Path, annotated_book: Tuple[AnnotationStore, AnnotationBook]
+) -> None:
+    from epy_reader.annotations.export import render_section
+    from epy_reader.annotations.models import AnnotationReference
+
+    store, book = annotated_book
+    store.create(
+        book.id,
+        TextAnchor(content_id="chapter", start=20, end=26, quote="second"),
+        chapter="EUGENE",
+        reference=AnnotationReference(
+            headings=["EUGENE"], location="Location 1:21", page_start="12", page_end="13"
+        ),
+    )
+    markdown = render_section(book, store.list_annotations(book.id)).decode()
+    assert "### EUGENE" in markdown
+    assert "**Pages 12–13**" in markdown
+
+
+def test_export_uses_stable_location_for_legacy_highlight(
+    tmp_path: Path, annotated_book: Tuple[AnnotationStore, AnnotationBook]
+) -> None:
+    from epy_reader.annotations.export import render_section
+
+    store, book = annotated_book
+    assert "**Location 1:1**" in render_section(book, store.list_annotations(book.id)).decode()
+
+
 def test_export_preserves_handwritten_bytes(
     tmp_path: Path, annotated_book: Tuple[AnnotationStore, AnnotationBook]
 ) -> None:

@@ -186,6 +186,62 @@ def noted_reader(terminal_reader: TerminalReader) -> TerminalReader:
     return reader
 
 
+def test_restart_upgrades_existing_obsidian_story_references(
+    terminal_reader: TerminalReader, tmp_path: Path
+) -> None:
+    import hashlib
+
+    from epy_reader.annotations import ExportLink, TextAnchor
+    from epy_reader.annotations.store import AnnotationStore
+    from epy_reader.parser import parse_html
+
+    reader = terminal_reader
+    body = '<h1>OTHER STORY</h1><p>First passage</p><h1>EUGENE</h1><span epub:type="pagebreak" title="12"/><p>Eugene passage</p>'
+    build_epub(reader.book, body)
+    source = parse_html(
+        "<html><body>" + body + "</body></html>", textwidth=80, content_id="chapter.xhtml"
+    ).documents[0]
+    start = source.text.index("Eugene passage")
+    store = AnnotationStore(reader.home / ".config/epy/states.db")
+    book = store.identify_book(reader.book, "Annotation Test", "")
+    saved = store.create(
+        book.id,
+        TextAnchor(
+            content_id=source.content_id, start=start, end=start + 14, quote="Eugene passage"
+        ),
+        note="kept note",
+        chapter="WRONG STORY",
+    )
+    section = (
+        "<!-- epy:annotations:"
+        + book.id
+        + ":start -->\n### WRONG STORY\nold export\n<!-- epy:annotations:"
+        + book.id
+        + ":end -->"
+    ).encode()
+    destination = tmp_path / "Obsidian.md"
+    outside = b"---\ntags: [books]\n---\nMy handwritten notes.\n\n"
+    destination.write_bytes(outside + section + b"\n")
+    store.set_link(
+        ExportLink(
+            book_id=book.id,
+            path=str(destination),
+            digest=hashlib.sha256(section).hexdigest(),
+            revision=0,
+            exported_revision=0,
+        )
+    )
+    reader.restart()
+    corrected = next(item for item in reader.annotations() if item.id == saved.id)
+    assert corrected.chapter == "EUGENE"
+    assert corrected.note == "kept note"
+    assert corrected.reference.page_start == "12"
+    markdown = destination.read_bytes()
+    assert markdown.startswith(outside)
+    assert b"### EUGENE" in markdown
+    assert b"WRONG STORY" not in markdown
+
+
 def test_note_editor_cursor_tracks_trailing_space(terminal_reader: TerminalReader) -> None:
     reader = terminal_reader
     reader.send("v", "Space", "n")

@@ -29,6 +29,10 @@ class SourceCell:
     text: str
 
 
+def normalize_paragraph(text: str) -> str:
+    return text.expandtabs().replace("\r", " ").replace("\v", " ").replace("\f", " ")
+
+
 def graphemes(text: str) -> List[str]:
     return _GRAPHEMES.findall(text)
 

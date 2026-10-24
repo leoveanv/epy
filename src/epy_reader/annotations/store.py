@@ -11,6 +11,7 @@ from uuid import uuid4
 from epy_reader.annotations.models import (
     Annotation,
     AnnotationBook,
+    AnnotationReference,
     ExportLink,
     TextAnchor,
 )
@@ -115,6 +116,7 @@ class AnnotationStore:
         note: str = "",
         chapter: str = "",
         content_order: int = 0,
+        reference: Optional[AnnotationReference] = None,
     ) -> Annotation:
         now = datetime.now(timezone.utc).isoformat()
         annotation = Annotation(
@@ -123,6 +125,7 @@ class AnnotationStore:
             anchor=anchor,
             note=note,
             chapter=chapter,
+            reference=reference,
             content_order=content_order,
             created_at=now,
             updated_at=now,

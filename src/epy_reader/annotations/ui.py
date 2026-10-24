@@ -20,6 +20,7 @@ from epy_reader.annotations.models import (
     TextAnchor,
     resolve_anchor,
 )
+from epy_reader.annotations.references import BookReferences
 from epy_reader.annotations.store import AnnotationStore
 from epy_reader.annotations.text import SourceCell, clip_text, wrap_text
 from epy_reader.annotations.view import (
@@ -56,6 +57,7 @@ class AnnotationController:
     enabled: bool
     store: AnnotationStore
     book: AnnotationBook
+    references: BookReferences
     records: List[Annotation]
     visible: List[VisibleAnnotation]
     selection: Optional[Selection]
@@ -95,6 +97,8 @@ class AnnotationController:
         self.resized_during_edit = False
         self.editor_size = None
         if self.enabled:
+            assert isinstance(ebook, Epub)
+            self.references = BookReferences(ebook)
             self.store = AnnotationStore(Path(database))
             metadata = ebook.get_meta()
             self.book = self.store.identify_book(
@@ -110,7 +114,12 @@ class AnnotationController:
             pass
 
     def refresh(self) -> None:
-        self.records = self.store.list_annotations(self.book.id)
+        self.records = []
+        for annotation in self.store.list_annotations(self.book.id):
+            corrected = self.references.enrich(annotation)
+            if corrected != annotation:
+                self.store.save(corrected)
+            self.records.append(corrected)
 
     def attach(self, board: InfiniBoard, structure: TextStructure) -> None:
         self.board = board
@@ -118,6 +127,7 @@ class AnnotationController:
         self.visible = []
         if not self.enabled or board.spread != 1:
             return
+        self.references.prime(structure.documents)
         self.refresh()
         for annotation in self.records:
             document = next(
@@ -320,15 +330,11 @@ class AnnotationController:
                     )
                     if result.action == EditorAction.SAVE:
                         order = list(self.ebook.contents).index(anchor.content_id)
-                        chapter = next(
-                            (
-                                entry.label
-                                for entry in self.ebook.toc_entries
-                                if entry.content_index == order
-                            ),
-                            "Chapter {}".format(order + 1),
+                        reference = self.references.for_anchor(anchor, order)
+                        chapter = " / ".join(reference.headings)
+                        self.store.create(
+                            self.book.id, anchor, result.text, chapter, order, reference=reference
                         )
-                        self.store.create(self.book.id, anchor, result.text, chapter, order)
                         self.export_pending()
                         self.refresh_selection()
                     if self.resized_during_edit:

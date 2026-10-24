@@ -10,6 +10,7 @@ from epy_reader.annotations.text import (
     SourceDocument,
     cell_width,
     map_paragraph,
+    normalize_paragraph,
     wrap_text,
 )
 from epy_reader.models import CharPos, InlineStyle, TextMark, TextSpan, TextStructure
@@ -303,10 +304,7 @@ class HTMLtoLines(HTMLParser):
         italic_groups = HTMLtoLines._group_spans_by_row(italic_spans)
         bold_groups = HTMLtoLines._group_spans_by_row(bold_spans)
 
-        paragraphs = [
-            line.expandtabs().replace("\r", " ").replace("\v", " ").replace("\f", " ")
-            for line in self.text
-        ]
+        paragraphs = [normalize_paragraph(line) for line in self.text]
         document = SourceDocument(content_id=content_id, text="\n".join(paragraphs))
         source_cells = []
         source_offset = 0
