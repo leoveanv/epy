@@ -49,6 +49,11 @@ class Config(AppData):
         validate_annotation_keymaps(self.keymap)
         if not 16 <= self.setting.AnnotationNotesWidth <= 100:
             raise ValueError("AnnotationNotesWidth must be between 16 and 100 cells.")
+        if (
+            type(self.setting.AnnotationScrolloff) is not int
+            or self.setting.AnnotationScrolloff < 0
+        ):
+            raise ValueError("AnnotationScrolloff must be a non-negative integer.")
         # to build help menu text
         self.keymap_user_dict = keymap_dict
 

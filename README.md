@@ -32,6 +32,15 @@ Press `v` to select a passage, `a` to manage annotations, and uppercase `O` to l
 
 See [annotation usage and setup](docs/annotations.md).
 
+## Inline images and previews
+
+With standalone `kitten` installed, supported terminals display images within the reading text, including while scrolling and in two-column mode.
+Press `o`, select a bordered image with `j` / `k` or the arrows, then press Enter for a larger in-terminal preview.
+Press Esc to return or `e` to open the original externally.
+
+In-terminal previews require standalone `kitten` on your `PATH`; external viewing works without it.
+See [image controls and terminal setup](docs/images.md) for Ghostty, Kitty, and tmux.
+
 ## Installation
 
 Install this fork with Python 3.12:
@@ -46,6 +55,7 @@ The PyPI package `epy-reader` installs upstream epy without this fork's annotati
 
 ## Usage
 - `epy "/path/to/your/book.epub"`
+- **Ctrl-U / Ctrl-D** Move up / down half a page, including in annotation selection
 - **c** Switching the color profile
 - **Shift + h** Previous chapter
 - **Shift + l** Next chapter
@@ -59,8 +69,13 @@ The PyPI package `epy-reader` installs upstream epy without this fork's annotati
 - **q** Quit
 - **-** Shrink the text
 - **+** Enlarge the text
-- **o** Open an image
+- **o** Select an image for preview
 - **s** Show or hide progress
+
+In normal reading, a numeric prefix repeats half-page movement, for example `2` then Ctrl-D.
+Configure `HalfScreenUp` and `HalfScreenDown` under `Keymap` to change those reading bindings.
+Selection mode supports `AnnotationScrolloff` under `Setting`, matching Neovim's `scrolloff` with a default of `0`.
+See [annotation settings](docs/annotations.md#settings).
 
 ## Color profiles
 In the config file you will see the following section.

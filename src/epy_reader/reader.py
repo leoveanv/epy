@@ -4,6 +4,7 @@ import dataclasses
 import multiprocessing
 import os
 import re
+import shlex
 import shutil
 import signal
 import sqlite3
@@ -13,13 +14,19 @@ import tempfile
 import uuid
 import xml.etree.ElementTree as ET
 from html import unescape
-from typing import Dict, List, Optional, Sequence, Tuple, Union, cast
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union, cast
 
 import epy_reader.settings as settings
+from epy_reader.annotations.input import notice
 from epy_reader.annotations.ui import AnnotationController
 from epy_reader.board import InfiniBoard
 from epy_reader.config import Config
 from epy_reader.ebooks import Azw, Ebook, Epub, Mobi
+from epy_reader.images.inline import InlineImages
+from epy_reader.images.layout import ImageLayout
+from epy_reader.images.models import ImageSource, ImageTarget
+from epy_reader.images.terminal import query_graphics_support
+from epy_reader.images.ui import PreviewAction, select_image, show_preview
 from epy_reader.lib import resolve_path
 from epy_reader.models import (
     Direction,
@@ -71,9 +78,16 @@ class Reader:
     _ext_dict_app: Optional[str]
     _image_viewer: Optional[str]
     totlines_per_content: Tuple[int, ...]
+    original_content_lines: Tuple[int, ...]
+    image_layout: Optional[ImageLayout]
+    inline_images: Optional[InlineImages]
+    _inline_content_index: int
 
     def __init__(self, screen: curses.window, ebook: Ebook, config: Config, state: State) -> None:
 
+        self.image_layout = None
+        self.inline_images = None
+        self.original_content_lines = ()
         self.setting = config.setting
         self.keymap = config.keymap
         # to build help menu text
@@ -245,24 +259,56 @@ class Reader:
 
         return self._image_viewer
 
-    def open_image(self, pad, name, bstr):
-        sfx = os.path.splitext(name)[1]
-        fd, path = tempfile.mkstemp(suffix=sfx)
+    def open_image(self, board: InfiniBoard, name: str, data: bytes) -> Union[NoUpdate, Key]:
+        action = show_preview(self.screen, ImageSource(name=name, data=data), self.keymap)
+        if action == PreviewAction.EXTERNAL:
+            self.open_external_image(name, data)
+        if self.screen.getmaxyx() != (board.screen_rows, board.screen_cols):
+            return Key(curses.KEY_RESIZE)
+        return NoUpdate()
+
+    def open_external_image(self, name: str, data: bytes) -> None:
+        viewer = self.image_viewer
+        if viewer is None:
+            notice(self.screen, "No external image viewer was found.")
+            return
+        descriptor, path = tempfile.mkstemp(suffix=os.path.splitext(name)[1])
         try:
-            with os.fdopen(fd, "wb") as tmp:
-                # tmp.write(epub.file.read(src))
-                tmp.write(bstr)
-            # run(VWR + " " + path, shell=True)
-            subprocess.call(
-                self.image_viewer + " " + path,
-                shell=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            k = pad.getch()
+            with os.fdopen(descriptor, "wb") as temporary:
+                temporary.write(data)
+            if viewer == "start" and sys.platform == "win32":
+                getattr(os, "startfile")(path)
+            else:
+                result = subprocess.run(
+                    shlex.split(viewer) + [path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                if result.returncode:
+                    raise OSError("External viewer exited with status " + str(result.returncode))
+            notice(self.screen, "Opened externally: " + name)
         finally:
             os.remove(path)
-        return k
+
+    def show_images(
+        self, board: InfiniBoard, image_maps: Mapping[int, str], reading_state: ReadingState
+    ) -> Union[NoUpdate, Key]:
+        target = select_image(board, image_maps, reading_state.row, self.keymap)
+        if not isinstance(target, ImageTarget):
+            return target
+        image_path = target.path
+        if isinstance(self.ebook, (Epub, Mobi, Azw)):
+            target_state = dataclasses.replace(reading_state, row=target.row)
+            content_index = (
+                self.convert_absolute_reading_state_to_relative(target_state).content_index
+                if self.seamless
+                else reading_state.content_index
+            )
+            content_path = self.ebook.contents[content_index]
+            assert isinstance(content_path, str)
+            image_path = resolve_path(content_path, image_path)
+        name, data = self.ebook.get_img_bytestr(image_path)
+        return self.open_image(board, name, data)
 
     def show_loader(self, *, loader_str: str = "\u231b", subtext: Optional[str] = None):
         self.screen.clear()
@@ -312,11 +358,14 @@ class Reader:
     @text_win
     def show_win_help(self):
         src = "Key Bindings:\n"
-        dig = max([len(i) for i in self.keymap_user_dict.values()]) + 2
-        for i in self.keymap_user_dict.keys():
-            src += "{}  {}\n".format(
-                self.keymap_user_dict[i].rjust(dig), " ".join(re.findall("[A-Z][^A-Z]*", i))
-            )
+        labels = {
+            name: value.replace("\x15", "Ctrl-U").replace("\x04", "Ctrl-D")
+            for name, value in self.keymap_user_dict.items()
+        }
+        dig = max(len(label) for label in labels.values()) + 2
+        for name, label in labels.items():
+            # NOTE: This expression splits PascalCase action names into readable help labels.
+            src += "{}  {}\n".format(label.rjust(dig), " ".join(re.findall("[A-Z][^A-Z]*", name)))
         return "Help", src, self.keymap.Help
 
     @text_win
@@ -691,6 +740,8 @@ class Reader:
                     + self.keymap.PageDown
                     + self.keymap.ScrollUp
                     + self.keymap.ScrollDown
+                    + self.keymap.HalfScreenUp
+                    + self.keymap.HalfScreenDown
                     + (curses.KEY_RESIZE,)
                 ):
                     self._tts_speaker.stop()
@@ -705,8 +756,11 @@ class Reader:
         return k
 
     def savestate(self, reading_state: ReadingState) -> None:
+        reading_state = self.original_state(reading_state)
         if self.seamless:
-            reading_state = self.convert_absolute_reading_state_to_relative(reading_state)
+            reading_state = construct_relative_reading_state(
+                reading_state, self.original_content_lines or self.totlines_per_content
+            )
         self.state.set_last_reading_state(self.ebook, reading_state)
         self.state.update_library(self.ebook, self.reading_progress)
 
@@ -812,7 +866,71 @@ class Reader:
         assert isinstance(text_structure, TextStructure)
         return LoadedBookContent(text_structure, toc_entries, contents)
 
+    def original_state(self, state: ReadingState) -> ReadingState:
+        if self.image_layout is None:
+            return state
+        row = self.image_layout.original_row(state.row)
+        total = len(self.image_layout.row_starts) - 1
+        return dataclasses.replace(
+            state,
+            row=row,
+            image_offset=state.row - self.image_layout.display_row(row),
+            rel_pctg=row / total if state.rel_pctg is not None else None,
+        )
+
+    def display_state(self, state: ReadingState) -> ReadingState:
+        if self.image_layout is None:
+            return state
+        original_row = state.row
+        if state.rel_pctg is not None:
+            original_row = round(state.rel_pctg * (len(self.image_layout.row_starts) - 1))
+        row = self.image_layout.display_row(original_row) + min(
+            state.image_offset, self.image_layout.image_rows - 1
+        )
+        return dataclasses.replace(state, row=row, image_offset=0, rel_pctg=None)
+
+    def load_inline_source(self, target: ImageTarget) -> ImageSource:
+        index = self._inline_content_index
+        if self.seamless:
+            index = construct_relative_reading_state(
+                ReadingState(content_index=0, textwidth=80, row=target.row),
+                self.totlines_per_content,
+            ).content_index
+        path = target.path
+        if isinstance(self.ebook, (Epub, Mobi, Azw)):
+            content = self.ebook.contents[index]
+            assert isinstance(content, str)
+            path = resolve_path(content, path)
+        name, data = self.ebook.get_img_bytestr(path)
+        return ImageSource(name=name, data=data)
+
     def read(self, reading_state: ReadingState) -> Union[ReadingState, Ebook]:
+        self.image_layout = None
+        self.inline_images = None
+        self.original_content_lines = ()
+        self._inline_content_index = reading_state.content_index
+        helper = shutil.which("kitten") if self.setting.InlineImages else None
+        if helper and curses.COLORS >= 256 and curses.COLOR_PAIRS >= 48:
+            support = query_graphics_support(os.environ, sys.stdout.fileno())
+            if support.reason is None:
+                self.inline_images = InlineImages(
+                    helper, support, self.load_inline_source, os.environ
+                )
+        try:
+            result = self.read_content(reading_state)
+            if isinstance(result, ReadingState) and (
+                self.seamless or result.content_index == reading_state.content_index
+            ):
+                result = self.original_state(result)
+            return result
+        finally:
+            if self.inline_images is not None:
+                self.inline_images.close()
+            if self.seamless and self.original_content_lines:
+                self.totlines_per_content = self.original_content_lines
+            self.image_layout = None
+
+    def read_content(self, reading_state: ReadingState) -> Union[ReadingState, Ebook]:
         # reusable loop indices
 
         k = self.keymap.RegexSearch[0] if self.search_data else NoUpdate()
@@ -844,10 +962,6 @@ class Reader:
                 )
                 // 2,
             )
-        x = (cols - reading_state.textwidth) // 2
-        if self.spread == 2:
-            x = DoubleSpreadPadding.LEFT.value
-
         self.show_loader(subtext="loading contents")
         # get text structure, toc entries and contents of the book
         if self.seamless:
@@ -862,6 +976,7 @@ class Reader:
         contents = loaded_content.contents
         totlines = len(text_structure.text_lines)
 
+        backward_row = reading_state.row if reading_state.row < 0 else None
         if reading_state.row < 0 and totlines <= rows * self.spread:
             reading_state = dataclasses.replace(reading_state, row=0)
         elif reading_state.rel_pctg is not None:
@@ -870,6 +985,27 @@ class Reader:
             )
         else:
             reading_state = dataclasses.replace(reading_state, row=reading_state.row % totlines)
+
+        if self.inline_images is not None and text_structure.image_maps:
+            self.image_layout = ImageLayout.expand(
+                text_structure, image_rows=min(24, max(3, reading_state.textwidth // 4))
+            )
+            reading_state = self.display_state(reading_state)
+            text_structure = self.image_layout.structure
+            totlines = len(text_structure.text_lines)
+            if backward_row is not None:
+                reading_state = dataclasses.replace(
+                    reading_state, row=max(0, totlines + backward_row)
+                )
+            if self.seamless:
+                self.original_content_lines = self.totlines_per_content
+                boundaries = [0]
+                for length in self.original_content_lines:
+                    boundaries.append(boundaries[-1] + length)
+                self.totlines_per_content = tuple(
+                    self.image_layout.display_row(end) - self.image_layout.display_row(start)
+                    for start, end in zip(boundaries, boundaries[1:])
+                )
 
         board = InfiniBoard(
             screen=self.screen,
@@ -885,7 +1021,10 @@ class Reader:
             letters_per_content.append(len(re.sub(r"\s", "", text_line)))
 
         self.annotations.attach(board, text_structure)
-        x = board.x
+        if self.inline_images is not None and self.image_layout is not None:
+            self.inline_images.attach(
+                board, text_structure.image_maps, self.image_layout.image_rows
+            )
         reading_state = self.annotations.restore_jump(reading_state)
 
         self.screen.clear()
@@ -1009,7 +1148,9 @@ class Reader:
                             return ReadingState(
                                 content_index=reading_state.content_index - 1,
                                 textwidth=reading_state.textwidth,
-                                row=rows
+                                row=-rows * self.spread
+                                if self.inline_images is not None
+                                else rows
                                 * self.spread
                                 * (
                                     len(text_structure_content_before.text_lines)
@@ -1061,10 +1202,32 @@ class Reader:
                                 row=0,
                             )
 
-                    # elif k in K["HalfScreenUp"] | K["HalfScreenDown"]:
-                    #     countstring = str(rows // 2)
-                    #     k = list(K["ScrollUp" if k in K["HalfScreenUp"] else "ScrollDown"])[0]
-                    #     continue
+                    elif k in self.keymap.HalfScreenUp + self.keymap.HalfScreenDown:
+                        down = k in self.keymap.HalfScreenDown
+                        end = pgend(totlines, rows * self.spread)
+                        if (
+                            down
+                            and reading_state.row >= end
+                            and reading_state.content_index < len(contents) - 1
+                        ):
+                            return ReadingState(
+                                content_index=reading_state.content_index + 1,
+                                textwidth=reading_state.textwidth,
+                                row=0,
+                            )
+                        if not down and reading_state.row == 0 and reading_state.content_index > 0:
+                            return ReadingState(
+                                content_index=reading_state.content_index - 1,
+                                textwidth=reading_state.textwidth,
+                                row=-rows * self.spread,
+                            )
+                        distance = max(1, rows * self.spread // 2) * count
+                        reading_state = dataclasses.replace(
+                            reading_state,
+                            row=max(
+                                0, min(end, reading_state.row + (distance if down else -distance))
+                            ),
+                        )
 
                     elif k in self.keymap.NextChapter:
                         ntoc = find_current_content_index(
@@ -1274,78 +1437,14 @@ class Reader:
                             # y = ret_object
                             reading_state = ret_object
 
-                    elif k in self.keymap.OpenImage and self.image_viewer:
-                        imgs_in_screen = list(
-                            set(
-                                range(reading_state.row, reading_state.row + rows * self.spread + 1)
-                            )
-                            & set(text_structure.image_maps.keys())
-                        )
-                        if not imgs_in_screen:
-                            k = NoUpdate()
-                            continue
-
-                        imgs_in_screen.sort()
-                        image_path = None
-                        if len(imgs_in_screen) == 1:
-                            image_path = text_structure.image_maps[imgs_in_screen[0]]
-                        elif len(imgs_in_screen) > 1:
-                            imgs_rel_to_row = [i - reading_state.row for i in imgs_in_screen]
-                            p = cast(Union[NoUpdate, Key], NoUpdate())
-                            i = 0
-                            while p not in self.keymap.Quit and p not in self.keymap.Follow:
-                                self.screen.move(
-                                    imgs_rel_to_row[i] % rows,
-                                    (
-                                        x
-                                        if imgs_rel_to_row[i] // rows == 0
-                                        else cols
-                                        - DoubleSpreadPadding.RIGHT.value
-                                        - reading_state.textwidth
-                                    )
-                                    + reading_state.textwidth // 2,
-                                )
-                                self.screen.refresh()
-                                safe_curs_set(2)
-                                p = board.getch()
-                                if p in self.keymap.ScrollDown:
-                                    i += 1
-                                elif p in self.keymap.ScrollUp:
-                                    i -= 1
-                                i = i % len(imgs_rel_to_row)
-
-                            safe_curs_set(0)
-                            if p in self.keymap.Follow:
-                                image_path = text_structure.image_maps[imgs_in_screen[i]]
-
-                        if image_path:
-                            try:
-                                # if self.ebook.__class__.__name__ in {"Epub", "Mobi", "Azw"}:
-                                if isinstance(self.ebook, (Epub, Mobi, Azw)):
-                                    # self.seamless adjustment
-                                    if self.seamless:
-                                        current_content_index = (
-                                            self.convert_absolute_reading_state_to_relative(
-                                                reading_state
-                                            ).content_index
-                                        )
-                                    else:
-                                        current_content_index = reading_state.content_index
-                                        # for n, content in enumerate(self.ebook.contents):
-                                        #     content_path = content
-                                        #     if reading_state.row < sum(totlines_per_content[:n]):
-                                        #         break
-
-                                    content_path = self.ebook.contents[current_content_index]
-                                    assert isinstance(content_path, str)
-                                    image_path = resolve_path(content_path, image_path)
-                                imgnm, imgbstr = self.ebook.get_img_bytestr(image_path)
-                                k = self.open_image(board, imgnm, imgbstr)
-                                continue
-                            except Exception as e:
-                                self.show_win_error("Error Opening Image", str(e), tuple())
-                                if DEBUG:
-                                    raise e
+                    elif k in self.keymap.OpenImage:
+                        try:
+                            k = self.show_images(board, text_structure.image_maps, reading_state)
+                        except Exception as error:
+                            k = self.show_win_error("Error Opening Image", str(error), tuple())
+                            if DEBUG:
+                                raise
+                        continue
 
                     elif (
                         k in self.keymap.SwitchColor
@@ -1374,8 +1473,10 @@ class Reader:
                                 self.state.insert_bookmark(
                                     self.ebook,
                                     bmname,
-                                    dataclasses.replace(
-                                        reading_state, rel_pctg=reading_state.row / totlines
+                                    self.original_state(
+                                        dataclasses.replace(
+                                            reading_state, rel_pctg=reading_state.row / totlines
+                                        )
                                     ),
                                 )
                             except sqlite3.IntegrityError:
@@ -1409,9 +1510,16 @@ class Reader:
                                 ]
                                 if (
                                     bookmark_to_jump.content_index == reading_state.content_index
-                                    and bookmark_to_jump.textwidth == reading_state.textwidth
+                                    and (
+                                        self.image_layout is not None
+                                        or bookmark_to_jump.textwidth == reading_state.textwidth
+                                    )
                                 ):
-                                    reading_state = bookmark_to_jump
+                                    reading_state = self.display_state(
+                                        dataclasses.replace(
+                                            bookmark_to_jump, textwidth=reading_state.textwidth
+                                        )
+                                    )
                                 else:
                                     return ReadingState(
                                         content_index=bookmark_to_jump.content_index,
@@ -1436,7 +1544,7 @@ class Reader:
                         if isinstance(jumnum, Key) and jumnum in tuple(
                             Key(i) for i in range(48, 58)
                         ):
-                            self.jump_list[jumnum.char] = reading_state
+                            self.jump_list[jumnum.char] = self.original_state(reading_state)
                         else:
                             k = NoUpdate()
                             continue
@@ -1449,6 +1557,8 @@ class Reader:
                             and jumnum.char in self.jump_list
                         ):
                             marked_reading_state = self.jump_list[jumnum.char]
+                            if marked_reading_state.content_index == reading_state.content_index:
+                                marked_reading_state = self.display_state(marked_reading_state)
                             return dataclasses.replace(
                                 marked_reading_state,
                                 textwidth=reading_state.textwidth,
@@ -1534,7 +1644,11 @@ class Reader:
                     )
 
                 try:
-                    if self.setting.PageScrollAnimation and self.page_animation:
+                    if (
+                        self.setting.PageScrollAnimation
+                        and self.page_animation
+                        and self.image_layout is None
+                    ):
                         self.screen.clear()
                         for i in range(1, reading_state.textwidth + 1):
                             curses.napms(1)

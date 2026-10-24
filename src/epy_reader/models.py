@@ -67,6 +67,9 @@ class ReadingState:
     `rel_pctg` and `section` default to None and if
     either of them is assigned with value, then it
     will be overriding the `row` value.
+
+    `image_offset` preserves a partial inline image during in-session reflow.
+    Persistent positions use the original text row, independent of graphics support.
     """
 
     content_index: int
@@ -74,6 +77,7 @@ class ReadingState:
     row: int
     rel_pctg: Optional[float] = None
     section: Optional[str] = None
+    image_offset: int = 0
 
 
 @dataclass(frozen=True)

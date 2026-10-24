@@ -33,6 +33,7 @@ def starts_word(previous: Optional[SourceCell], current: SourceCell) -> bool:
 class Selection:
     structure: TextStructure
     cells: Tuple[SourceCell, ...]
+    cell_rows: Tuple[int, ...]
     cursor: int
     mark: Optional[int]
     word_starts: Tuple[int, ...]
@@ -42,6 +43,7 @@ class Selection:
     def __init__(self, structure: TextStructure, row: int) -> None:
         self.structure = structure
         self.cells = structure.source_cells
+        self.cell_rows = tuple(cell.row for cell in self.cells)
         if not self.cells:
             raise ValueError("This document has no selectable text.")
         self.cursor = next((i for i, cell in enumerate(self.cells) if cell.row >= row), 0)
@@ -91,6 +93,29 @@ class Selection:
             candidate = min(candidates, key=lambda i: abs(self.cells[i].col - self.cell.col))
         if self.cells[candidate].content_id == self.cell.content_id:
             self.cursor = candidate
+
+    def move_rows(self, distance: int) -> None:
+        target = self.cell.row + distance
+        index = min(
+            self.last_cell,
+            bisect_left(self.cell_rows, target, self.first_cell, self.last_cell + 1),
+        )
+        if index > self.first_cell and abs(self.cell_rows[index - 1] - target) < abs(
+            self.cell_rows[index] - target
+        ):
+            index -= 1
+        row = self.cell_rows[index]
+        start = bisect_left(self.cell_rows, row, self.first_cell, self.last_cell + 1)
+        end = bisect_right(self.cell_rows, row, start, self.last_cell + 1)
+        self.cursor = min(range(start, end), key=lambda i: abs(self.cells[i].col - self.cell.col))
+
+    # NOTE: Neovim scrolloff keeps context around the cursor, except at the document edges.
+    def viewport(self, top_row: int, *, height: int, scrolloff: int) -> int:
+        height = max(1, height)
+        margin = min(max(0, scrolloff), height // 2)
+        top = min(top_row, self.cell.row - margin)
+        top = max(top, self.cell.row - height + margin + 1)
+        return max(0, min(top, max(0, len(self.structure.text_lines) - height)))
 
     def _word_cursor(self, direction: str) -> int:
         position = (

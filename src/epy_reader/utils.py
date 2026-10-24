@@ -356,6 +356,7 @@ def construct_relative_reading_state(
         if abs_reading_state.rel_pctg
         else None,
         section=abs_reading_state.section,
+        image_offset=abs_reading_state.image_offset,
     )
 
 

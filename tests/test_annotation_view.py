@@ -55,6 +55,85 @@ def test_reverse_selection_produces_source_quote() -> None:
 
 
 @dataclass(frozen=True)
+class ScrolloffCase:
+    cursor_row: int
+    top_row: int
+    scrolloff: int
+    expected_top: int
+    height: int = 20
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        ScrolloffCase(cursor_row=15, top_row=10, scrolloff=5, expected_top=10),
+        ScrolloffCase(cursor_row=14, top_row=10, scrolloff=5, expected_top=9),
+        ScrolloffCase(cursor_row=25, top_row=10, scrolloff=5, expected_top=11),
+        ScrolloffCase(cursor_row=29, top_row=10, scrolloff=0, expected_top=10),
+        ScrolloffCase(cursor_row=1, top_row=10, scrolloff=5, expected_top=0),
+        ScrolloffCase(cursor_row=99, top_row=60, scrolloff=5, expected_top=83),
+        ScrolloffCase(cursor_row=50, top_row=0, scrolloff=999, expected_top=41),
+        ScrolloffCase(cursor_row=50, top_row=0, scrolloff=999, expected_top=50, height=1),
+    ],
+)
+def test_selection_viewport_honors_scrolloff(case: ScrolloffCase) -> None:
+    from epy_reader.annotations.view import Selection
+
+    structure = parse_html(
+        "<pre>" + "\n".join(str(row) for row in range(100)) + "</pre>", textwidth=80
+    )
+    selection = Selection(structure, case.cursor_row)
+    assert (
+        selection.viewport(case.top_row, height=case.height, scrolloff=case.scrolloff)
+        == case.expected_top
+    )
+
+
+@pytest.mark.parametrize("distance,expected_row", [(19, 19), (-19, 0), (999, 99)])
+def test_selection_row_movement_lands_on_the_nearest_display_row(
+    distance: int, expected_row: int
+) -> None:
+    from epy_reader.annotations.view import Selection
+
+    structure = parse_html(
+        "<pre>" + "\n".join(str(row) for row in range(100)) + "</pre>", textwidth=80
+    )
+    selection = Selection(structure, 0)
+    selection.move_rows(distance)
+    assert selection.cell.row == expected_row
+
+
+def test_selection_row_movement_skips_reserved_image_space() -> None:
+    from epy_reader.annotations.view import Selection
+    from epy_reader.images.layout import ImageLayout
+
+    source = parse_html('<p>before</p><img src="figure.png"/><p>after</p>', textwidth=40)
+    layout = ImageLayout.expand(source, image_rows=20)
+    selection = Selection(layout.structure, 0)
+    selection.move_rows(19)
+    expected = next(cell for cell in layout.structure.source_cells if cell.text == "a")
+    assert selection.cell == expected
+
+
+def test_selection_row_movement_stays_inside_its_content_document() -> None:
+    from epy_reader.annotations.view import Selection
+    from epy_reader.utils import merge_text_structures
+
+    first = parse_html("<pre>one\ntwo\nthree</pre>", textwidth=40, content_id="first")
+    second = parse_html(
+        "<pre>four\nfive\nsix</pre>",
+        textwidth=40,
+        content_id="second",
+        starting_line=len(first.text_lines),
+    )
+    selection = Selection(merge_text_structures(first, second), len(first.text_lines))
+    selection.move_rows(999)
+    assert selection.cell.row == len(first.text_lines) + 2
+    selection.move_rows(-999)
+    assert selection.cell == second.source_cells[0]
+
+
+@dataclass(frozen=True)
 class WordMotionCase:
     text: str
     start_offset: int

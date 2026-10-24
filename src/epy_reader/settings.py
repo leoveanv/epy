@@ -35,12 +35,14 @@ DICT_PRESET_LIST = (
 @dataclass(frozen=True)
 class Settings:
     DefaultViewer: str = "auto"
+    InlineImages: bool = True
     DictionaryClient: str = "auto"
     ShowProgressIndicator: bool = True
     PageScrollAnimation: bool = True
     MouseSupport: bool = False
     StartWithDoubleSpread: bool = False
     AnnotationNotesWidth: int = 36
+    AnnotationScrolloff: int = 0
     AnnotationColorFG: int = 223
     AnnotationColorBG: int = 52
     AnnotationAsciiConnectors: bool = False
@@ -62,8 +64,8 @@ class CfgDefaultKeymaps:
     ScrollDown: str = "j"
     PageUp: str = "h"
     PageDown: str = "l"
-    # HalfScreenUp: str = "h"
-    # HalfScreenDown: str
+    HalfScreenUp: str = "\x15"
+    HalfScreenDown: str = "\x04"
     NextChapter: str = "L"
     PrevChapter: str = "H"
     BeginningOfCh: str = "g"
@@ -108,8 +110,8 @@ class CfgBuiltinKeymaps:
 
 @dataclass(frozen=True)
 class Keymap:
-    # HalfScreenDown: Tuple[Key, ...]
-    # HalfScreenUp: Tuple[Key, ...]
+    HalfScreenDown: Tuple[Key, ...]
+    HalfScreenUp: Tuple[Key, ...]
     AddBookmark: Tuple[Key, ...]
     AnnotationSelect: Tuple[Key, ...]
     AnnotationList: Tuple[Key, ...]

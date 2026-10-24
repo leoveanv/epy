@@ -11,7 +11,7 @@ import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, List
+from typing import Iterator, List, Optional
 from uuid import uuid4
 
 import pytest
@@ -77,13 +77,14 @@ class TerminalReader:
             time.sleep(0.01)
         raise AssertionError("Unexpected terminal text: " + text)
 
-    def restart(self) -> None:
+    def restart(self, *, search_path: Optional[str] = None) -> None:
         command = (
             shlex.join(
                 [
                     "env",
                     "HOME=" + str(self.home),
                     "TERM=tmux-256color",
+                    *([] if search_path is None else ["PATH=" + search_path]),
                     sys.executable,
                     "-m",
                     "epy_reader",

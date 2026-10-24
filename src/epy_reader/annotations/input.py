@@ -37,7 +37,15 @@ def read_event(screen: curses.window) -> InputEvent:
         return InputEvent(key=keys.get(value, "unknown"))
     if value == "\x1b":
         return read_escape(screen)
-    controls = {"\n": "enter", "\r": "enter", "\t": "tab", "\x7f": "backspace", "\b": "backspace"}
+    controls = {
+        "\n": "enter",
+        "\r": "enter",
+        "\t": "tab",
+        "\x7f": "backspace",
+        "\b": "backspace",
+        "\x15": "half_page_up",
+        "\x04": "half_page_down",
+    }
     return InputEvent(key=controls.get(value, ""), text="" if value in controls else value)
 
 

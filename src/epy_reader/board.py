@@ -16,6 +16,7 @@ class InfiniBoard:
 
     And what this does is only drawing text/string on curses screen
     without .clear() or .refresh() to optimize performance.
+    Inline graphics may flush a synchronized redraw through the image renderer.
     """
 
     screen: curses.window
@@ -30,6 +31,8 @@ class InfiniBoard:
     temporary_style: Tuple[InlineStyle, ...]
     spread: int
     annotation_renderer: Optional[Callable[[int], None]]
+    image_renderer: Optional[Callable[[int, int], None]]
+    image_rows: int
 
     def __init__(
         self,
@@ -48,6 +51,8 @@ class InfiniBoard:
         self.default_style = default_style
         self.temporary_style = ()
         self.annotation_renderer = None
+        self.image_renderer = None
+        self.image_rows = 1
         self.spread = spread
 
         if self.spread == 2:
@@ -132,6 +137,8 @@ class InfiniBoard:
                     self.screen.addstr(n_row, self.x_alt, text_line)
 
         self.render_styles(row, self.default_style, bottom_padding)
+        if self.image_renderer is not None:
+            self.image_renderer(row, bottom_padding)
         if self.annotation_renderer is not None:
             self.annotation_renderer(row)
         self.render_styles(row, self.temporary_style, bottom_padding)

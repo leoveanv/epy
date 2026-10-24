@@ -275,15 +275,16 @@ class AnnotationController:
         try:
             while True:
                 rows = self.screen.getmaxyx()[0]
-                viewport = max(0, min(viewport, self.selection.cell.row))
-                viewport = max(viewport, self.selection.cell.row - rows + 3)
+                viewport = self.selection.viewport(
+                    viewport, height=rows - 1, scrolloff=self.config.setting.AnnotationScrolloff
+                )
                 self.screen.erase()
-                self.board.write(viewport)
+                self.board.write(viewport, bottom_padding=1)
                 draw_text(
                     self.screen,
                     rows - 1,
                     0,
-                    "Select: hjkl/arrows  w/b: words  Space: start  Enter: save  n: note  d/Del: delete  v/Esc: exit",
+                    "Select: hjkl/arrows  Ctrl-U/D: half page  w/b: words  Space: start  Enter: save  n: note  d/Del: delete  v/Esc: exit",
                 )
                 self.screen.move(
                     self.selection.cell.row - viewport, self.board.x + self.selection.cell.col
@@ -301,6 +302,13 @@ class AnnotationController:
                 ).get(event.text)
                 if direction in ("left", "right", "up", "down", "word_forward", "word_backward"):
                     self.selection.move(direction)
+                elif direction in ("half_page_up", "half_page_down"):
+                    previous_row = self.selection.cell.row
+                    distance = max(1, (rows - 1) // 2)
+                    self.selection.move_rows(
+                        distance if direction == "half_page_down" else -distance
+                    )
+                    viewport += self.selection.cell.row - previous_row
                 elif event.text == " ":
                     self.selection.mark = self.selection.cursor
                 elif event.key in ("delete", "backspace") or event.text == "d":

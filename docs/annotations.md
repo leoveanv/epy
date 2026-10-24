@@ -24,6 +24,9 @@ The selection includes both endpoint characters. It can cross wrapped lines and 
 
 Use `w` to move to the next word start and `b` to move back to a word start, including across wrapped lines.
 
+`Ctrl-D` moves down half the usable window; `Ctrl-U` moves up. The cursor moves with the viewport and extends an active selection.
+Half-page movement stays inside the current EPUB content document and skips non-selectable image space.
+
 Letters, digits, and underscores form words; punctuation forms separate runs. Word movement never crosses an EPUB content document boundary.
 
 After saving, the completed selection clears and the cursor stays in place. Press `n` to edit that highlight's note, or `Space` to start another selection.
@@ -173,6 +176,7 @@ The existing JSON configuration accepts these additions under `Setting`:
 ```json
 {
   "AnnotationNotesWidth": 36,
+  "AnnotationScrolloff": 0,
   "AnnotationColorFG": 223,
   "AnnotationColorBG": 52,
   "AnnotationAsciiConnectors": false
@@ -180,6 +184,11 @@ The existing JSON configuration accepts these additions under `Setting`:
 ```
 
 The note width accepts 16–100 terminal cells. Colors use the same curses palette as the existing color settings.
+
+`AnnotationScrolloff` matches Neovim's `scrolloff`: it keeps that many visible lines above and below the selection cursor when possible.
+It accepts a non-negative integer and defaults to `0`. For example, `5` starts scrolling five lines before the cursor reaches an edge.
+Values larger than half the usable window keep the cursor near the center. The document edges can reduce the available context.
+This setting affects selection mode only; it does not change normal reading.
 
 Under `Keymap`, configure `AnnotationSelect`, `AnnotationList`, and `AnnotationLink`. Defaults are `v`, `a`, and `O`.
 

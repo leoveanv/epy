@@ -17,8 +17,19 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
         with:
-          python-version: "3.x"
+          python-version: "3.12"
       - uses: abatilo/actions-poetry@v2.0.0
+      - name: Install terminal test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y tmux ncurses-term
+          if ! infocmp xterm-ghostty > /dev/null 2>&1; then
+            printf 'xterm-ghostty|Graphics test terminal,\n\tuse=xterm-256color,\n' | tic -x -
+          fi
+          curl -fsSL --retry 3 https://github.com/kovidgoyal/kitty/releases/download/v0.49.2/kitten-linux-amd64 -o "$RUNNER_TEMP/kitten"
+          echo "2a803b4d411f327cc41b7193cb529f6de06ae3b169a346b3060212bbfeafc8bc  $RUNNER_TEMP/kitten" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/kitten"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - name: Install Project
         run: poetry install
       - name: Run tests
