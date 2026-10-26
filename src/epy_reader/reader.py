@@ -13,6 +13,7 @@ import sys
 import tempfile
 import uuid
 import xml.etree.ElementTree as ET
+import webbrowser
 from html import unescape
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union, cast
 
@@ -28,6 +29,10 @@ from epy_reader.images.models import ImageSource, ImageTarget
 from epy_reader.images.terminal import query_graphics_support
 from epy_reader.images.ui import PreviewAction, select_image, show_preview
 from epy_reader.lib import resolve_path
+from epy_reader.keyboard import read_code, read_value
+from epy_reader.links.models import ContentPosition, TextLink
+from epy_reader.links.navigation import BookLinks, JumpHistory, capture_position, position_row
+from epy_reader.links.ui import select_link
 from epy_reader.models import (
     Direction,
     InlineStyle,
@@ -82,6 +87,10 @@ class Reader:
     image_layout: Optional[ImageLayout]
     inline_images: Optional[InlineImages]
     _inline_content_index: int
+    links: BookLinks
+    jump_history: JumpHistory
+    pending_position: Optional[ContentPosition]
+    jump_origin: Optional[ContentPosition]
 
     def __init__(self, screen: curses.window, ebook: Ebook, config: Config, state: State) -> None:
 
@@ -139,6 +148,12 @@ class Reader:
                 raise e
             else:
                 sys.exit("ERROR: Badly-structured ebook.\n" + str(e))
+
+        self.links = BookLinks(ebook)
+        self.links.include_supplemental()
+        self.jump_history = JumpHistory()
+        self.pending_position = None
+        self.jump_origin = None
 
         # state
         self.state = state
@@ -359,7 +374,10 @@ class Reader:
     def show_win_help(self):
         src = "Key Bindings:\n"
         labels = {
-            name: value.replace("\x15", "Ctrl-U").replace("\x04", "Ctrl-D")
+            name: value.replace("\x15", "Ctrl-U")
+            .replace("\x04", "Ctrl-D")
+            .replace("\x0f", "Ctrl-O")
+            or ("Ctrl-I (extended input)" if name == "JumpForward" else "")
             for name, value in self.keymap_user_dict.items()
         }
         dig = max(len(label) for label in labels.values()) + 2
@@ -453,7 +471,7 @@ class Reader:
             while True:
                 # NOTE: getch() only handles ascii
                 # to handle wide char like: é, use get_wch()
-                ipt = Key(stat.get_wch())
+                ipt = Key(read_value(stat))
                 # get_wch() return ambiguous type
                 # str for string input but int for function or special keys
                 # if type(ipt) == str:
@@ -718,7 +736,7 @@ class Reader:
                 if self._tts_speaker.is_done():
                     k = self.keymap.PageDown[0]
                     break
-                tmp = self.screen.getch()
+                tmp = read_code(self.screen, timeout_ms=1)
                 k = NoUpdate() if tmp == -1 else Key(tmp)
                 if k == Key(curses.KEY_MOUSE):
                     mouse_event = curses.getmouse()
@@ -904,6 +922,48 @@ class Reader:
         name, data = self.ebook.get_img_bytestr(path)
         return ImageSource(name=name, data=data)
 
+    def viewport_position(self, structure: TextStructure, row: int) -> ContentPosition:
+        return capture_position(
+            structure, row, image_rows=self.image_layout.image_rows if self.image_layout else 0
+        )
+
+    def record_arrival(self, structure: TextStructure, reading_state: ReadingState) -> None:
+        if self.jump_origin is not None:
+            self.jump_history.record(
+                self.jump_origin, self.viewport_position(structure, reading_state.row)
+            )
+            self.jump_origin = None
+
+    def jump_to(
+        self, position: ContentPosition, reading_state: ReadingState, structure: TextStructure
+    ) -> ReadingState:
+        if any(document.content_id == position.content_id for document in structure.documents):
+            return dataclasses.replace(
+                reading_state,
+                row=position_row(
+                    structure,
+                    position,
+                    image_rows=self.image_layout.image_rows if self.image_layout else 0,
+                ),
+                rel_pctg=None,
+                section=None,
+            )
+        self.pending_position = position
+        index = next(
+            index
+            for index, content in enumerate(self.ebook.contents)
+            if str(content) == position.content_id
+        )
+        return ReadingState(content_index=index, textwidth=reading_state.textwidth, row=0)
+
+    def follow_link(self, link: TextLink) -> Optional[ContentPosition]:
+        target = self.links.resolve(link.content_id, link.href)
+        if target.url:
+            if not webbrowser.open(target.url):
+                raise ValueError("The default browser could not open the link.")
+            return None
+        return self.links.position(target)
+
     def read(self, reading_state: ReadingState) -> Union[ReadingState, Ebook]:
         self.image_layout = None
         self.inline_images = None
@@ -1040,11 +1100,35 @@ class Reader:
                 reading_state, row=text_structure.section_rows.get(reading_state.section, 0)
             )
 
+        if self.pending_position is not None:
+            reading_state = dataclasses.replace(
+                reading_state,
+                row=position_row(
+                    text_structure,
+                    self.pending_position,
+                    image_rows=self.image_layout.image_rows if self.image_layout else 0,
+                ),
+                rel_pctg=None,
+                section=None,
+            )
+            self.pending_position = None
+        self.record_arrival(text_structure, reading_state)
+
         checkpoint_row = None
         countstring = ""
 
         try:
             while True:
+                self.record_arrival(text_structure, reading_state)
+                if k in (
+                    self.keymap.Follow
+                    + self.keymap.TableOfContents
+                    + self.keymap.ShowBookmarks
+                    + self.keymap.JumpToPosition
+                    + self.keymap.AnnotationList
+                    + self.keymap.RegexSearch
+                ):
+                    self.jump_origin = self.viewport_position(text_structure, reading_state.row)
                 if countstring == "":
                     count = 1
                 else:
@@ -1082,6 +1166,35 @@ class Reader:
                                 )
                             )
                             sys.exit()
+
+                    elif k in self.keymap.Follow:
+                        selection = select_link(board, text_structure, reading_state.row)
+                        if isinstance(selection, Key):
+                            k = selection
+                            continue
+                        if isinstance(selection, TextLink):
+                            try:
+                                position = self.follow_link(selection)
+                                if position is not None:
+                                    return self.jump_to(position, reading_state, text_structure)
+                            except (ValueError, OSError, KeyError, webbrowser.Error) as error:
+                                notice(self.screen, str(error))
+
+                    elif k in self.keymap.JumpBackward or k in self.keymap.JumpForward:
+                        current = self.viewport_position(text_structure, reading_state.row)
+                        move = (
+                            self.jump_history.backward
+                            if k in self.keymap.JumpBackward
+                            else self.jump_history.forward
+                        )
+                        destination = None
+                        for _ in range(count):
+                            position = move(destination or current)
+                            if position is None:
+                                break
+                            destination = position
+                        if destination is not None:
+                            return self.jump_to(destination, reading_state, text_structure)
 
                     elif k in self.keymap.TTSToggle and self.tts_support:
                         tospeak = ""
@@ -1600,6 +1713,9 @@ class Reader:
                                 return get_ebook_obj(library_items[choice_index].filepath)
 
                     elif k == Key(curses.KEY_RESIZE):
+                        self.pending_position = self.viewport_position(
+                            text_structure, reading_state.row
+                        )
                         self.savestate(
                             dataclasses.replace(
                                 reading_state, rel_pctg=reading_state.row / totlines

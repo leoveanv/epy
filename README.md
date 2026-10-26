@@ -32,6 +32,15 @@ Press `v` to select a passage, `a` to manage annotations, and uppercase `O` to l
 
 See [annotation usage and setup](docs/annotations.md).
 
+## Citations and links
+
+Citations display as `[1]` while preserving existing highlight anchors. Press `f`, type a temporary link number, then press Enter.
+Internal links jump to their reference; HTTP/HTTPS links open in your default browser.
+
+Ctrl-O and Ctrl-I move backward and forward through jump history. Tab still opens the table of contents.
+Distinct Ctrl-I input requires enhanced keyboard support, including a tmux setting for Ghostty.
+See [link navigation and keyboard setup](docs/links.md).
+
 ## Inline images and previews
 
 With standalone `kitten` installed, supported terminals display images within the reading text, including while scrolling and in two-column mode.

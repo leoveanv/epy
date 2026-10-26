@@ -5,6 +5,7 @@ from typing import Callable, Optional, Tuple, Union, cast
 from epy_reader.annotations.text import cell_width
 from epy_reader.models import Direction, InlineStyle, Key, NoUpdate
 from epy_reader.settings import DoubleSpreadPadding
+from epy_reader.keyboard import read_code
 
 
 class InfiniBoard:
@@ -88,7 +89,7 @@ class InfiniBoard:
                 )
 
     def getch(self) -> Union[NoUpdate, Key]:
-        input = self.screen.getch()
+        input = read_code(self.screen)
         if input == -1:
             return NoUpdate()
         return Key(input)

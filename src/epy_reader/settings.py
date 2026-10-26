@@ -4,6 +4,7 @@ from enum import Enum
 from typing import List, Optional, Tuple
 
 from epy_reader.models import Key
+from epy_reader.keyboard import CTRL_I
 
 
 class DoubleSpreadPadding(Enum):
@@ -93,6 +94,8 @@ class CfgDefaultKeymaps:
     AnnotationSelect: str = "v"
     AnnotationList: str = "a"
     AnnotationLink: str = "O"
+    JumpBackward: str = "\x0f"
+    JumpForward: str = ""
 
 
 @dataclass(frozen=True)
@@ -105,6 +108,7 @@ class CfgBuiltinKeymaps:
     EndOfCh: Tuple[int, ...] = (curses.KEY_END,)
     TableOfContents: Tuple[int, ...] = (9, ord("\t"))
     Follow: Tuple[int, ...] = (10,)
+    JumpForward: Tuple[int, ...] = (CTRL_I,)
     Quit: Tuple[int, ...] = (3, 27, 304)
 
 
@@ -124,6 +128,8 @@ class Keymap:
     Follow: Tuple[Key, ...]
     Help: Tuple[Key, ...]
     JumpToPosition: Tuple[Key, ...]
+    JumpBackward: Tuple[Key, ...]
+    JumpForward: Tuple[Key, ...]
     Library: Tuple[Key, ...]
     MarkPosition: Tuple[Key, ...]
     Metadata: Tuple[Key, ...]

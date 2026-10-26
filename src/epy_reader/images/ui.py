@@ -21,6 +21,7 @@ from epy_reader.images.terminal import (
     redraw_safe_passthrough,
 )
 from epy_reader.models import Key, NoUpdate
+from epy_reader.keyboard import read_code
 from epy_reader.settings import Keymap
 from epy_reader.utils import safe_curs_set
 
@@ -176,7 +177,7 @@ def show_preview(screen: curses.window, source: ImageSource, keymap: Keymap) -> 
 
 def _preview_action(screen: curses.window, keymap: Keymap) -> Optional[PreviewAction]:
     while True:
-        key = Key(screen.getch())
+        key = Key(read_code(screen))
         if key == Key(curses.KEY_RESIZE):
             return None
         if key == Key("e"):

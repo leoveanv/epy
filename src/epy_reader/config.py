@@ -21,6 +21,18 @@ def validate_annotation_keymaps(keymap: settings.Keymap) -> None:
                 )
 
 
+def validate_navigation_keymaps(keymap: settings.Keymap) -> None:
+    for name in ("JumpBackward", "JumpForward"):
+        for field in dataclasses.fields(keymap):
+            if field.name != name and set(getattr(keymap, name)) & set(getattr(keymap, field.name)):
+                raise ValueError(
+                    name
+                    + " conflicts with "
+                    + field.name
+                    + ". Choose different keys in configuration.json."
+                )
+
+
 class Config(AppData):
     def __init__(self):
         setting_dict = dataclasses.asdict(settings.Settings())
@@ -47,6 +59,7 @@ class Config(AppData):
         self.setting = settings.Settings(**setting_dict)
         self.keymap = settings.Keymap(**keymap_updated)
         validate_annotation_keymaps(self.keymap)
+        validate_navigation_keymaps(self.keymap)
         if not 16 <= self.setting.AnnotationNotesWidth <= 100:
             raise ValueError("AnnotationNotesWidth must be between 16 and 100 cells.")
         if (

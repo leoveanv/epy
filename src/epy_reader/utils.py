@@ -17,6 +17,7 @@ from epy_reader.models import (
     TocEntry,
 )
 from epy_reader.parser import parse_html
+from epy_reader.keyboard import read_code
 from epy_reader.speakers import (
     SpeakerBaseModel,
     SpeakerGttsMPV,
@@ -209,7 +210,7 @@ def choice_win(allowdel=False):
 
                 pad.refresh(y, 0, Y + 4 + (1 if allowdel else 0), X + 4, rows - 5, cols - 6)
                 # pad.refresh(y, 0, Y+5, X+4, rows - 5, cols - 6)
-                key_chwin = Key(chwin.getch())
+                key_chwin = Key(read_code(chwin))
                 if key_chwin == Key(curses.KEY_MOUSE):
                     mouse_event = curses.getmouse()
                     if mouse_event[4] == curses.BUTTON4_PRESSED:
@@ -303,7 +304,7 @@ def text_win(textfunc):
                 textw.refresh()
                 return key_textw
             pad.refresh(y, 0, 6, 5, rows - 5, cols - 5)
-            key_textw = Key(textw.getch())
+            key_textw = Key(read_code(textw))
 
         textw.clear()
         textw.refresh()
@@ -322,6 +323,8 @@ def merge_text_structures(
         formatting=text_structure_first.formatting + text_structure_second.formatting,
         documents=text_structure_first.documents + text_structure_second.documents,
         source_cells=text_structure_first.source_cells + text_structure_second.source_cells,
+        links=text_structure_first.links + text_structure_second.links,
+        anchors=text_structure_first.anchors + text_structure_second.anchors,
     )
 
 

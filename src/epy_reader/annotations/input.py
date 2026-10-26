@@ -5,6 +5,8 @@ import sys
 from dataclasses import dataclass
 from typing import Iterator
 
+from epy_reader.keyboard import PASTE_START, read_value
+
 
 @dataclass(frozen=True)
 class InputEvent:
@@ -18,9 +20,12 @@ def bracketed_paste(enabled: bool) -> None:
     sys.stdout.flush()
 
 
-def read_event(screen: curses.window) -> InputEvent:
-    value = screen.get_wch()
+def read_event(screen: curses.window, *, timeout_ms: int = -1) -> InputEvent:
+    value = read_value(screen, timeout_ms=timeout_ms)
+    if value == PASTE_START:
+        return InputEvent(text=read_paste(screen), pasted=True)
     keys = {
+        27: "escape",
         curses.KEY_LEFT: "left",
         curses.KEY_RIGHT: "right",
         curses.KEY_UP: "up",
@@ -35,9 +40,8 @@ def read_event(screen: curses.window) -> InputEvent:
     }
     if isinstance(value, int):
         return InputEvent(key=keys.get(value, "unknown"))
-    if value == "\x1b":
-        return read_escape(screen)
     controls = {
+        "\x1b": "escape",
         "\n": "enter",
         "\r": "enter",
         "\t": "tab",
@@ -55,36 +59,12 @@ def read_events(screen: curses.window, limit: int = 32) -> Iterator[InputEvent]:
     for _ in range(max(0, limit - 1)):
         screen.timeout(0)
         try:
-            event = read_event(screen)
+            event = read_event(screen, timeout_ms=0)
         except curses.error:
             break
         finally:
             screen.timeout(-1)
         yield event
-
-
-def read_escape(screen: curses.window) -> InputEvent:
-    collected = ""
-    screen.timeout(40)
-    try:
-        for expected in "[200~":
-            value = screen.get_wch()
-            if not isinstance(value, str):
-                curses.unget_wch(value)
-                break
-            collected += value
-            if value != expected:
-                break
-        if collected == "[200~":
-            screen.timeout(-1)
-            return InputEvent(text=read_paste(screen), pasted=True)
-    except curses.error:
-        pass
-    finally:
-        screen.timeout(-1)
-    for char in reversed(collected):
-        curses.unget_wch(char)
-    return InputEvent(key="escape")
 
 
 def read_paste(screen: curses.window) -> str:

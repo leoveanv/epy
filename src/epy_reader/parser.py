@@ -14,6 +14,8 @@ from epy_reader.annotations.text import (
     wrap_text,
 )
 from epy_reader.models import CharPos, InlineStyle, TextMark, TextSpan, TextStructure
+from epy_reader.links.metadata import LinkMetadata
+from epy_reader.links.text import project_paragraph
 
 
 class HTMLtoLines(HTMLParser):
@@ -169,8 +171,11 @@ class HTMLtoLines(HTMLParser):
         self.italic_marks = []
         self.bold_marks = []
         self.imgs = dict()
+        self.link_metadata = LinkMetadata()
 
     def handle_starttag(self, tag, attrs):
+        if not self.ishidden and tag not in self.hide:
+            self.link_metadata.start(tag, attrs, CharPos(len(self.text) - 1, len(self.text[-1])))
         if re.match("h[1-6]", tag) is not None:
             self.ishead = True
         elif tag in self.inde:
@@ -212,6 +217,10 @@ class HTMLtoLines(HTMLParser):
                     self.sectsindex[len(self.text) - 1] = i[1]
 
     def handle_startendtag(self, tag, attrs):
+        if not self.ishidden and tag not in self.hide:
+            position = CharPos(len(self.text) - 1, len(self.text[-1]))
+            self.link_metadata.start(tag, attrs, position)
+            self.link_metadata.end(tag, position)
         if tag == "br":
             self.text += [""]
         elif tag in {"img", "image"}:
@@ -267,6 +276,9 @@ class HTMLtoLines(HTMLParser):
             last_mark = self.bold_marks[-1]
             self.bold_marks[-1] = dataclasses.replace(last_mark, end=char_pos)
 
+        if not self.ishidden:
+            self.link_metadata.end(tag, CharPos(len(self.text) - 1, len(self.text[-1])))
+
     def handle_data(self, raw):
         if raw and not self.ishidden:
             if self.text[-1] == "":
@@ -308,7 +320,10 @@ class HTMLtoLines(HTMLParser):
         document = SourceDocument(content_id=content_id, text="\n".join(paragraphs))
         source_cells = []
         source_offset = 0
-        for n, line in enumerate(paragraphs):
+        citations = self.link_metadata.citations(self.text, content_id)
+        for n, canonical_line in enumerate(paragraphs):
+            projection = project_paragraph(canonical_line, source_offset, citations)
+            line = projection.text
             startline = len(text)
             # findsect = re.search(r"(?<= \(#).*?(?=\) )", line)
             # if findsect is not None and findsect.group() in self.sects:
@@ -356,20 +371,29 @@ class HTMLtoLines(HTMLParser):
             if n not in self.idimgs:
                 indentation = 3 if n in self.idbull | self.idinde | self.idpref else 0
                 source_cells.extend(
-                    map_paragraph(
-                        document,
+                    projection.source_cells(
+                        map_paragraph(
+                            document,
+                            source_offset,
+                            line,
+                            text[startline:endline],
+                            starting_line + startline,
+                            indentation,
+                        ),
                         source_offset,
-                        line,
-                        text[startline:endline],
-                        starting_line + startline,
-                        indentation,
                     )
                 )
-            source_offset += len(line) + 1
+            paragraph_offset = source_offset
+            source_offset += len(canonical_line) + 1
 
             left_adjustment = 3 if n in self.idbull | self.idinde else 0
 
             for spans in italic_groups.get(n, []):
+                start = projection.display_offset(paragraph_offset + spans.start.col)
+                end = projection.display_offset(
+                    paragraph_offset + spans.start.col + spans.n_letters
+                )
+                spans = TextSpan(CharPos(n, start), end - start)
                 italics = HTMLtoLines._adjust_wrapped_spans(
                     text[startline:endline],
                     spans,
@@ -387,6 +411,11 @@ class HTMLtoLines(HTMLParser):
                     )
 
             for spans in bold_groups.get(n, []):
+                start = projection.display_offset(paragraph_offset + spans.start.col)
+                end = projection.display_offset(
+                    paragraph_offset + spans.start.col + spans.n_letters
+                )
+                spans = TextSpan(CharPos(n, start), end - start)
                 bolds = HTMLtoLines._adjust_wrapped_spans(
                     text[startline:endline],
                     spans,
@@ -413,6 +442,8 @@ class HTMLtoLines(HTMLParser):
             formatting=tuple(formatting),
             documents=(document,),
             source_cells=tuple(source_cells),
+            links=self.link_metadata.text_links(self.text, content_id),
+            anchors=self.link_metadata.destinations(self.text, content_id),
         )
 
 

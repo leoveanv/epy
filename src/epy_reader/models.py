@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Any, Mapping, Optional, Sequence, Tuple, Union
 
 from epy_reader.annotations.text import SourceCell, SourceDocument
+from epy_reader.links.models import DocumentAnchor, TextLink
 
 
 class Direction(Enum):
@@ -187,6 +188,8 @@ class TextStructure:
     formatting: Tuple[InlineStyle, ...]
     documents: Tuple[SourceDocument, ...] = ()
     source_cells: Tuple[SourceCell, ...] = ()
+    links: Tuple[TextLink, ...] = ()
+    anchors: Tuple[DocumentAnchor, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -206,9 +209,12 @@ class Key:
     Because ord("k") chr(34) are confusing
     """
 
-    def __init__(self, char_or_int: Union[str, int]):
-        self.value: int = char_or_int if isinstance(char_or_int, int) else ord(char_or_int)
-        self.char: str = char_or_int if isinstance(char_or_int, str) else chr(char_or_int)
+    value: int
+    char: str
+
+    def __init__(self, char_or_int: Union[str, int]) -> None:
+        self.value = char_or_int if isinstance(char_or_int, int) else ord(char_or_int)
+        self.char = chr(self.value) if 0 <= self.value <= 0x10FFFF else ""
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, Key):
