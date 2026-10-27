@@ -114,3 +114,43 @@ fn fictionbook_nested_sections_have_navigable_toc_targets() {
                 && entry.section.as_deref() == Some("nested"))
     );
 }
+
+#[test]
+fn fictionbook_reader_disables_epub_only_annotation_commands() {
+    use ers::app::workers::{ReaderJobs, WorkerEvent};
+    let directory = tempdir().unwrap();
+    let path = FictionBookBuilder::new().build(directory.path());
+    let jobs = ReaderJobs::start(path, directory.path().join("states.db"), 40);
+    let WorkerEvent::Opened { info, .. } = jobs
+        .events
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap()
+    else {
+        panic!("Expected a native FB2 reader session");
+    };
+    assert!(!info.annotations_enabled);
+}
+
+#[test]
+fn fictionbook_dump_does_not_create_application_storage() {
+    let directory = tempdir().unwrap();
+    let path = FictionBookBuilder::new().build(directory.path());
+    let config = directory.path().join("configuration");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ers"))
+        .arg("--dump")
+        .arg(path)
+        .env("XDG_CONFIG_HOME", &config)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("Supplemental note.")
+    );
+    assert!(!config.exists());
+}

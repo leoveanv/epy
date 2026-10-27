@@ -109,6 +109,30 @@ impl ReadingWindow {
             .map(|band| &band.document)
     }
 
+    pub(crate) fn selection_index(
+        &self,
+        document_index: usize,
+        row: usize,
+        col: usize,
+    ) -> Option<usize> {
+        let band = self
+            .bands
+            .iter()
+            .find(|band| band.document.index == document_index)?;
+        let start = band
+            .document
+            .layout
+            .source_cells
+            .partition_point(|cell| cell.row < row);
+        let local = band
+            .document
+            .layout
+            .cells_on_row(row)
+            .iter()
+            .position(|cell| col >= cell.col && col < cell.col + cell.width)?;
+        Some(band.first_cell + start + local)
+    }
+
     pub fn source_document(&self, content_id: &str) -> Option<&Arc<RenderedDocument>> {
         self.bands
             .iter()

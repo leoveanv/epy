@@ -121,3 +121,27 @@ fn unsupported_kindle_compression_is_not_treated_as_plain_text() {
     fixture.compression = 99;
     assert!(Book::open(BookLocation::local(fixture.build(directory.path(), "mobi"))).is_err());
 }
+
+#[test]
+fn mobi_dump_runs_without_creating_application_storage() {
+    let directory = tempdir().unwrap();
+    let path = MobiBuilder::new().build(directory.path(), "mobi");
+    let config = directory.path().join("configuration");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ers"))
+        .arg("--dump")
+        .arg(path)
+        .env("XDG_CONFIG_HOME", &config)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("Last passage.")
+    );
+    assert!(!config.exists());
+}

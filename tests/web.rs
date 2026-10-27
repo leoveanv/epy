@@ -7,6 +7,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::time::Duration;
+use tempfile::tempdir;
 
 fn read_request_path(stream: &mut TcpStream) -> Option<String> {
     let mut request = Vec::new();
@@ -167,4 +168,29 @@ fn web_loading_can_be_canceled_while_waiting_for_headers() {
         Some(ers::Error::Canceled)
     ));
     worker.join().unwrap();
+}
+
+#[test]
+fn web_dump_does_not_create_application_storage() {
+    let server = WebServer::start();
+    let directory = tempdir().unwrap();
+    let config = directory.path().join("configuration");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ers"))
+        .arg("--dump")
+        .arg(format!("{}/page/index.html", server.address))
+        .env("XDG_CONFIG_HOME", &config)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}; received paths: {:?}",
+        String::from_utf8_lossy(&output.stderr),
+        server.requests.try_iter().collect::<Vec<_>>()
+    );
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("Remote café passage.")
+    );
+    assert!(!config.exists());
 }

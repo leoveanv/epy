@@ -6,7 +6,6 @@ rust-version = "1.91"
 license = "GPL-3.0-only"
 description = "Terminal ebook reader, a Rust port of epy"
 publish = false
-autobins = false
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

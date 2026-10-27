@@ -1,6 +1,8 @@
 pub mod annotations;
+pub mod app;
 pub mod book;
 pub mod cancellation;
+pub mod cli;
 pub mod configuration;
 pub mod document;
 pub mod export;
@@ -9,6 +11,7 @@ pub mod integrations;
 pub mod reading;
 pub mod search;
 pub mod storage;
+pub mod terminal;
 
 mod filesystem;
 mod worker;
