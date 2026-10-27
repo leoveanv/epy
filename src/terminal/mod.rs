@@ -2,6 +2,7 @@ mod animation;
 mod dialogs;
 mod graphics;
 mod highlights;
+mod hyperlink_cues;
 mod input;
 mod mouse;
 pub mod page_animation;

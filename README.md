@@ -76,7 +76,7 @@ Press `O` to link a Markdown file for one-way export. Confirm the destination be
 
 ## Links and images
 
-Press `f` to show numbers on visible links, then type a number and press Enter. Internal links open in the book; HTTP/HTTPS links open in your browser. Other external schemes are rejected.
+Links are underlined, and the status line shows the number of visible links and the configured follow key. Press `f` to show numbers on visible links, then type a number and press Enter. Internal links open in the book; HTTP/HTTPS links open in your browser. Other external schemes are rejected.
 
 Inline images are enabled by default. Press `o` to select an image, Enter to preview it, and `e` in the preview to open it externally. Kitty-compatible terminals can use the Kitty graphics protocol directly. Local tmux sessions with one Ghostty or Kitty client and `allow-passthrough` enabled also use native graphics, with private temporary image files. Other sessions use a text-cell fallback. No `kitten` executable is required.
 

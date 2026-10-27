@@ -1,5 +1,6 @@
 use super::annotation_render;
 use super::highlights::Highlights;
+use super::hyperlink_cues::VisibleLinks;
 use super::widgets::list::{ListRows, dialog_window, draw_rows};
 use crate::annotations::{ReadingLayout, reading_layout};
 use crate::app::{ReaderMode, ReaderModel};
@@ -60,6 +61,7 @@ pub(super) fn draw(
         .filter_map(|offset| model.visible_row(offset))
         .collect::<Vec<_>>();
     let highlights = Highlights::visible(&visible, &model.view().info.annotations);
+    let links = VisibleLinks::new(&visible);
     for column in 0..model.view().spread {
         for screen_row in 0..model
             .reading_height()
@@ -84,6 +86,7 @@ pub(super) fn draw(
                     y: screen_row as u16,
                     base: style,
                     highlights: &highlights,
+                    links: &links,
                 },
             );
         }
@@ -122,6 +125,15 @@ pub(super) fn draw(
             model.view().row + 1
         ),
         _ => String::new(),
+    };
+    let status = if model.view().status.is_empty() && !model.export_state().pending() {
+        match links.status_hint(model) {
+            Some(hint) if status.is_empty() => hint,
+            Some(hint) => format!("{hint}  {status}"),
+            None => status,
+        }
+    } else {
+        status
     };
     frame.render_widget(
         Paragraph::new(clip_text(&safe_text(&status), area.width as usize)).style(style),
@@ -198,6 +210,7 @@ struct RowPaint<'a> {
     y: u16,
     base: Style,
     highlights: &'a Highlights<'a>,
+    links: &'a VisibleLinks<'a>,
 }
 
 fn draw_row(frame: &mut Frame<'_>, paint: RowPaint<'_>) {
@@ -210,6 +223,7 @@ fn draw_row(frame: &mut Frame<'_>, paint: RowPaint<'_>) {
         y,
         base,
         highlights,
+        links,
     } = paint;
     let line_width = cell_width(line);
     let active_document = document.index == model.view().rendered.index;
@@ -239,15 +253,19 @@ fn draw_row(frame: &mut Frame<'_>, paint: RowPaint<'_>) {
             .cells_on_row(row)
             .iter()
             .find(|cell| col >= cell.col && col < cell.col + cell.width)
-            && highlights.overlaps(&document.parsed.source.content_id, cell.start..cell.end)
         {
-            style = style
-                .fg(color(
-                    model.view().configuration.settings.annotation_color_fg,
-                ))
-                .bg(color(
-                    model.view().configuration.settings.annotation_color_bg,
-                ));
+            if links.overlaps(document.index, cell.start..cell.end) {
+                style = style.add_modifier(Modifier::UNDERLINED);
+            }
+            if highlights.overlaps(&document.parsed.source.content_id, cell.start..cell.end) {
+                style = style
+                    .fg(color(
+                        model.view().configuration.settings.annotation_color_fg,
+                    ))
+                    .bg(color(
+                        model.view().configuration.settings.annotation_color_bg,
+                    ));
+            }
         }
         if let Some(selection) = model.active_selection()
             && model
