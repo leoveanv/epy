@@ -1,191 +1,117 @@
-# `$ epy`
+# ers
 
-[![Downloads](https://static.pepy.tech/personalized-badge/epy-reader?period=month&units=none&left_color=grey&right_color=brightgreen&left_text=downloads/month)](https://pepy.tech/project/epy-reader)
+`ers` is a terminal ebook reader written in Rust. It supports EPUB, FB2, MOBI, AZW, AZW3, and HTTP/HTTPS pages, with reading progress, search, bookmarks, links, images, and EPUB annotations.
 
-<a href='https://ko-fi.com/P5P4IDCX2' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi2.png?v=3' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
+**Platform:** `ers` has been tested on macOS only. Other platforms are untested.
 
-![screenshot](https://raw.githubusercontent.com/wustho/epy/master/screenshot.png)
+`ers` is a Rust port of [epy](https://github.com/wustho/epy), which was originally based on [epr](https://github.com/wustho/epr).
 
-CLI Ebook Reader.
+## Install
 
-A fork of [epy](https://github.com/wustho/epy), originally based on [epr](https://github.com/wustho/epr). Features include:
+Install Rust 1.91 or newer and the macOS command-line developer tools, then run from this checkout:
 
-- Supported formats:
-  - Epub (.epub, .epub3)
-  - FictionBook (.fb2)
-  - Mobi (.mobi)
-  - AZW3 (.azw, .azw3)
-  - [URL](#url-support)
-- Reading progress percentage
-- Bookmarks
-- External dictionary integration (`sdcv`, `dict` or `wkdict`)
-- Inline formats: **bold** and _italic_ (depend on terminal and font capability. Italic only supported in python>=3.7)
-- Text-to-Speech (with additional setup, read [below](#text-to-speech))
-- [Double Spread](#double-spread)
-- Seamless (disabled by default, read [below](#reading-tips-using-epy))
-
-## This fork: highlights and notes
-
-This fork adds persistent keyboard highlights, margin notes, and one-way export to an Obsidian Markdown file for local EPUBs.
-
-Press `v` to select a passage, `a` to manage annotations, and uppercase `O` to link a Markdown destination.
-
-See [annotation usage and setup](docs/annotations.md).
-
-## Citations and links
-
-Citations display as `[1]` while preserving existing highlight anchors. Press `f`, type a temporary link number, then press Enter.
-Internal links jump to their reference; HTTP/HTTPS links open in your default browser.
-
-Ctrl-O and Ctrl-I move backward and forward through jump history. Tab still opens the table of contents.
-Distinct Ctrl-I input requires enhanced keyboard support, including a tmux setting for Ghostty.
-See [link navigation and keyboard setup](docs/links.md).
-
-## Inline images and previews
-
-With standalone `kitten` installed, supported terminals display images within the reading text, including while scrolling and in two-column mode.
-Press `o`, select a bordered image with `j` / `k` or the arrows, then press Enter for a larger in-terminal preview.
-Press Esc to return or `e` to open the original externally.
-
-In-terminal previews require standalone `kitten` on your `PATH`; external viewing works without it.
-See [image controls and terminal setup](docs/images.md) for Ghostty, Kitty, and tmux.
-
-## Installation
-
-Install this fork with Python 3.12:
-
-```shell
-python3.12 -m venv .venv
-.venv/bin/python -m pip install git+https://github.com/leoveanv/epy.git
-.venv/bin/epy "/path/to/book.epub"
+```sh
+cargo install --locked --path .
 ```
 
-The PyPI package `epy-reader` installs upstream epy without this fork's annotation features.
+This installs `ers` in Cargo's binary directory, normally `~/.cargo/bin`. Python is not required to build or run the reader.
 
-## Usage
-- `epy "/path/to/your/book.epub"`
-- **Ctrl-U / Ctrl-D** Move up / down half a page, including in annotation selection
-- **c** Switching the color profile
-- **Shift + h** Previous chapter
-- **Shift + l** Next chapter
-- **Shift + g** Skip to the end of the chapter
-- **g** Skip to the beginning of the chapter
-- **Shift + m** Show metadata of the book
-- **t** Table of contents
-- **/** Search
-- **b** Add bookmark
-- **Shift + b** Show bookmarks
-- **q** Quit
-- **-** Shrink the text
-- **+** Enlarge the text
-- **o** Select an image for preview
-- **s** Show or hide progress
+To build without installing:
 
-In normal reading, a numeric prefix repeats half-page movement, for example `2` then Ctrl-D.
-Configure `HalfScreenUp` and `HalfScreenDown` under `Keymap` to change those reading bindings.
-Selection mode supports `AnnotationScrolloff` under `Setting`, matching Neovim's `scrolloff` with a default of `0`.
-See [annotation settings](docs/annotations.md#settings).
-
-## Color profiles
-In the config file you will see the following section.
-   ```
-    "DarkColorFG": 47,
-    "DarkColorBG": 235,
-    "LightColorFG": 238,
-    "LightColorBG": 253,
-   ```
-
-Change the values by using this image. (Make sure to ignore zeros at the beginning, it won't launch otherwise.)
-![image](https://user-images.githubusercontent.com/108401269/198876974-c8420de1-b256-42fd-9a09-3a69c5019608.png)
-
-## Reading Tips Using Epy
-
-When reading using `epy` you might occasionally find triple asteriks `***`.
-That means you reach the end of some section in your ebook
-and the next line (right after those three asteriks, which is in new section)
-will start at the top of the page.
-This might be disorienting, so the best way to get seamless reading experience
-is by using next-page control (`space`, `l` or `Right`)
-instead of next-line control (`j` or `Down`).
-
-If you really want to get seamless reading experience, you can set `SeamlessBetweenChapters`
-to `true` in configuration file. But it has its drawback with more memory usage, that's why
-it's disabled by default.
-
-## Configuration File
-
-Config file is available in json format which is located at:
-
-- Linux and Mac OS: `~/.config/epy/configuration.json` or `~/.epy/configuration.json`
-- Windows: `%USERPROFILE%\.epy\configuration.json`
-
-## URL Support
-
-You can read online books like: short stories, fan fiction, etc. using `epy` with an url as cli argument.
-Pretty useful when you want to read with less distraction.
-`epy` will also remember your reading progress online.
-
-eg. You can read [Moby Dick from gutenberg](https://www.gutenberg.org/files/2701/2701-h/2701-h.htm)
-directly with:
-
-```shell
-$ epy https://www.gutenberg.org/files/2701/2701-h/2701-h.htm
+```sh
+cargo build --locked --release
+./target/release/ers /path/to/book.epub
 ```
 
-But note that `epy` will never be a web browser, it's simply a TUI program to read
-your favorite fiction stories in the comfort of a terminal.
-So please do not expect for web browser features to be implemented in `epy`.
+## Open a book
 
-## Using Mouse
+```sh
+ers /path/to/book.epub
+ers https://example.com/story.html
+ers "author or title"
+ers --history
+ers --dump /path/to/book.epub
+```
 
-Although mouse support is useful when running `epy` on Termux Android, it’s disabled by default
-since most people find it intrusive when using `epy` in desktop.
-But you can enable it by setting `MouseSupport` to `true` in config file.
+Run `ers` without arguments to resume the last book, or provide a history number or title/author search. Use `ers --help` for CLI options.
 
-| Key | Action |
+## Reading controls
+
+| Keys | Action |
 | --- | --- |
-| `Left Click` (right side of screen) | next page |
-| `Left Click` (left side of screen) | prev page |
-| `Right Click` | ToC |
-| `Scroll Up` | scroll up |
-| `Scroll Down` | scroll down |
-| `Ctrl` + `Scroll Up` | increase text width |
-| `Ctrl` + `Scroll Down` | decrease text width |
+| `j` / `k`, Up / Down | Scroll down / up. |
+| `l` / `h`, Space, Right / Left | Next / previous page. |
+| Ctrl-D / Ctrl-U | Move down / up half a page. |
+| `L` / `H` | Next / previous chapter. |
+| `g` / `G` | Beginning / end of chapter. |
+| `t` or Tab | Table of contents. |
+| `/` | Search a regular expression. Use `n` / `N` for next / previous match. |
+| `b` / `B` | Add a bookmark / open bookmarks. |
+| `m` then a digit / backtick then a digit | Save / jump to a session quickmark. |
+| Ctrl-O / Ctrl-I | Backward / forward through jump history. |
+| `R` | Open the library. |
+| `D` | Toggle double spread. |
+| `-` / `+` | Shrink / enlarge text in single-column mode. |
+| `d` | Look up a word. |
+| `c` / `s` | Change color profile / toggle progress. |
+| `?` / `q` | Help / quit. |
 
-## Text-to-Speech
+Numeric prefixes repeat supported commands. Terminals must distinguish Ctrl-I from Tab for forward jump history. In tmux, enable `extended-keys`; `ers` accepts CSI-u and xterm extended-key formats. The outer terminal must support extended keys as well.
 
-To get Text-to-Speech (TTS) support, external TTS engine is necessary.
+The reader requires a terminal of at least 22 columns by 12 rows. If the terminal becomes smaller, resize it to continue viewing the book.
 
-List of supported engines:
+During long operations, input buffers have limits. If a buffer fills, `ers` reports ignored input; retry after the operation finishes.
 
-- `mimic`
-- `pico2wave`
-- `gtts-mpv` (requires both [gTTS](https://pypi.org/project/gTTS) and [MPV](https://www.mpv.io))
+## Highlights and notes
 
-## Dictionary
+Annotations are available for local EPUB books and do not modify the ebook.
 
-To use "Define Word" you will have to install an external dictionary cli program (`sdcv`, `dict` or `wkdict`). After you've done that, it is recommended to manually modify the configuration.json file, and set your desired dictionary there, so everything works properly.
+1. Press `v` to enter selection mode, then move with `h/j/k/l` or the arrow keys.
+2. Press Space to start a selection and move to its inclusive end. Press Enter to save a highlight, or `n` to add a note.
+3. In the note editor, Enter inserts a newline. Press Tab to select **Save**, then Enter to commit. Press `v` or Esc to leave selection mode.
 
-After that you will be able to find definition of word by pressing `d`, and aprompt will appear to let you type in word to define.
+Press `a` to open the annotation list. Select a highlight and press Enter to jump, `e` to edit its note, `f` to read it, or `d` to delete it after confirmation. Press `r` to copy annotations from another identity after validating their exact positions.
 
-## Double Spread
+Press `O` to link a Markdown file for one-way export. Confirm the destination before writing. Existing handwritten text outside the managed section is preserved. If export fails or encounters a conflict, the annotation remains saved locally; `O` provides retry and recovery options.
 
-Double spread is intended to mimic the behaviour of real book,
-so line scrolling navigation will act as scrolling page and textwidth is not adjustable.
+## Links and images
 
-## Changelog
+Press `f` to show numbers on visible links, then type a number and press Enter. Internal links open in the book; HTTP/HTTPS links open in your browser. Other external schemes are rejected.
 
-- `v2021.10.23`: Major refactoring which harness a lot of new stuff in `python>=3.7`
-  and `epy` won't be backward compatible with older python version and older configuration.
+Inline images are enabled by default. Press `o` to select an image, Enter to preview it, and `e` in the preview to open it externally. Kitty-compatible terminals can use the Kitty graphics protocol directly. Local tmux sessions with one Ghostty or Kitty client and `allow-passthrough` enabled also use native graphics, with private temporary image files. Other sessions use a text-cell fallback. No `kitten` executable is required.
 
-- `v2022.1.8`: Change in configuration and reading states schema that is not backward compatible.
-  So if error is encountered, deleting the configuration and states file might fix the issue.
+## Configuration and data
 
-- `v2022.1.15`: Early implementation of URL support, table of contents isn't available for now.
+By default, `ers` stores `configuration.json` and `states.db` under `~/.config/ers/`. An absolute `XDG_CONFIG_HOME` changes the parent directory. The configuration file is optional; missing settings use defaults.
 
-- `v2022.1.23`: Library implementation: ability to switch ebook from reading history
-  inside epy (default key: `R`).
+For example, create `configuration.json` with:
 
-- `v2022.2.5`: Fix process.join() issue for unstarted process.
+```json
+{
+  "settings": {
+    "mouse_support": true,
+    "between_chapters": false,
+    "inline_images": true,
+    "dictionary_client": "auto"
+  },
+  "bindings": {
+    "jump_forward": "F"
+  }
+}
+```
 
-- `v2022.10.2`: Major breakdown `epy.py` module into package structure for easier development.
+Mouse support is disabled by default. When enabled, a left click turns a page, a right click opens the table of contents, the wheel scrolls, and Ctrl-wheel changes text width.
+
+For dictionary lookup, install `wkdict`, `sdcv`, or `dict`, or set `dictionary_client` to a command and its arguments. With `auto`, the reader checks those clients in that order.
+
+The reader uses its own data directory and does not automatically import epy data. Back up `states.db` and linked Markdown files while the reader is closed.
+
+## Credits
+
+Credit to [wustho](https://github.com/wustho) and the contributors to [epy](https://github.com/wustho/epy) for the original Python ebook reader. `ers` ports that reader to Rust and builds on this fork's annotation, image, and link features.
+
+`epy` was originally based on [epr](https://github.com/wustho/epr).
+
+## License
+
+This project is licensed under [GPL-3.0-only](LICENSE). Kindle decoding includes adaptations from [boko](https://github.com/zacharydenton/boko); attribution and license details are in `src/book/kindle/BOKO-NOTICE` and `src/book/kindle/BOKO-LICENSE`.
