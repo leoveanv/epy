@@ -1,0 +1,13 @@
+mod dispatch;
+pub mod epub;
+mod fictionbook;
+mod kindle;
+mod location;
+mod models;
+mod navigation;
+mod web;
+pub use dispatch::{Book, BookAsset, BookKind, BookOpenOptions, ResourceTarget};
+pub use location::BookLocation;
+pub use models::{BookMetadata, LibraryEntry, ResourceLimits, TocEntry};
+pub use navigation::{BookNavigation, NavigationPage, NavigationSection, parse_navigation};
+pub(crate) mod xml;

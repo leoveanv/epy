@@ -1,0 +1,6 @@
+The simple lowercase table in lowercase_table.rs derives from UnicodeData.txt version 15.0.0.
+Source: https://github.com/unicode-org/unicodetools/blob/main/unicodetools/data/ucd/15.0.0/UnicodeData.txt
+Copyright © 2001–2024 Unicode, Inc. See UNICODE-LICENSE.
+
+Only records with an explicit simple lowercase mapping are retained, in code-point order.
+This fixed table preserves the reader's required backreference behavior across Rust compiler upgrades.

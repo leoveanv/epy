@@ -1,0 +1,6 @@
+Portions of the HUFF/CDIC, PalmDOC, and FONT decoding algorithms are adapted from boko 0.5.0 by Zachary Denton.
+Source: https://github.com/zacharydenton/boko
+Upstream license: GPL-3.0-or-later. The license text is retained in BOKO-LICENSE.
+These adapted portions are distributed under GPL version 3, consistent with ers.
+
+The ers adapter adds bounded decoding, strict dictionary and metadata validation, and combined-container resource handling.

@@ -1,3 +1,11 @@
+pub mod annotations;
+pub mod book;
+pub mod cancellation;
+pub mod configuration;
+pub mod document;
+pub mod reading;
+pub mod search;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("The operation was canceled.")]
