@@ -1,0 +1,264 @@
+use crate::annotations::{Annotation, AnnotationBook};
+use crate::{Error, Result};
+use sha2::{Digest, Sha256};
+
+pub struct MergeRequest<'a> {
+    pub content: &'a [u8],
+    pub book_id: &'a str,
+    pub section: &'a [u8],
+    pub expected_digest: Option<&'a str>,
+    pub overwrite: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct MergedSection {
+    pub content: Vec<u8>,
+    pub digest: String,
+}
+
+pub fn section_digest(content: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(content))
+}
+
+pub fn literal_markdown(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '\\' | '`' | '*' | '_' | '{' | '}' | '[' | ']' | '(' | ')' | '#' | '+' | '!' | '|' => {
+                escaped.push('\\');
+                escaped.push(character);
+            }
+            _ => escaped.push(character),
+        }
+    }
+    escaped
+}
+
+fn reference_label(annotation: &Annotation) -> String {
+    if let Some(reference) = &annotation.reference {
+        if let Some(start) = reference
+            .page_start
+            .as_deref()
+            .filter(|page| !page.is_empty())
+        {
+            if let Some(end) = reference
+                .page_end
+                .as_deref()
+                .filter(|page| !page.is_empty() && *page != start)
+            {
+                return format!("Pages {start}–{end}");
+            }
+            return format!("Page {start}");
+        }
+        if !reference.location.is_empty() {
+            return reference.location.clone();
+        }
+    }
+    annotation.anchor.stable_location(annotation.content_order)
+}
+
+fn heading_lines(headings: &[String], previous: &[String]) -> Vec<String> {
+    let mut common = headings
+        .iter()
+        .zip(previous)
+        .take_while(|(left, right)| left == right)
+        .count();
+    if headings.len() < previous.len() && common == headings.len() {
+        common = common.saturating_sub(1);
+    }
+    headings
+        .iter()
+        .enumerate()
+        .skip(common)
+        .flat_map(|(index, heading)| {
+            [
+                format!(
+                    "{} {}",
+                    "#".repeat((index + 3).min(6)),
+                    literal_markdown(&heading.replace('\n', " "))
+                ),
+                String::new(),
+            ]
+        })
+        .collect()
+}
+
+fn python_splitlines(value: &str) -> Vec<&str> {
+    let mut lines = Vec::new();
+    let mut start = 0;
+    let mut characters = value.char_indices().peekable();
+    while let Some((index, character)) = characters.next() {
+        if matches!(
+            character,
+            '\n' | '\r'
+                | '\u{000b}'
+                | '\u{000c}'
+                | '\u{001c}'
+                | '\u{001d}'
+                | '\u{001e}'
+                | '\u{0085}'
+                | '\u{2028}'
+                | '\u{2029}'
+        ) {
+            lines.push(&value[start..index]);
+            start = index + character.len_utf8();
+            if character == '\r' && characters.peek().is_some_and(|(_, next)| *next == '\n') {
+                characters.next();
+                start += 1;
+            }
+        }
+    }
+    if start < value.len() {
+        lines.push(&value[start..]);
+    }
+    lines
+}
+
+fn annotation_lines(annotation: &Annotation) -> Vec<String> {
+    let mut lines = vec![
+        format!("**{}**", literal_markdown(&reference_label(annotation))),
+        String::new(),
+    ];
+    lines.extend(
+        python_splitlines(annotation.anchor.quote())
+            .into_iter()
+            .map(|line| format!("> {}", literal_markdown(line))),
+    );
+    lines.extend([
+        String::new(),
+        format!("^ers-{}", annotation.id),
+        String::new(),
+    ]);
+    if !annotation.note.is_empty() {
+        lines.extend([
+            "**Note**".into(),
+            String::new(),
+            literal_markdown(&annotation.note),
+            String::new(),
+        ]);
+    }
+    lines
+}
+
+fn annotation_headings(annotation: &Annotation) -> Vec<String> {
+    if let Some(reference) = &annotation.reference
+        && !reference.headings.is_empty()
+    {
+        return reference.headings.clone();
+    }
+    vec![if annotation.chapter.is_empty() {
+        "Highlights".into()
+    } else {
+        annotation.chapter.clone()
+    }]
+}
+
+pub fn render_section(book: &AnnotationBook, annotations: &[Annotation], newline: &str) -> Vec<u8> {
+    let mut lines = vec![
+        format!("<!-- ers:annotations:{}:start -->", book.id),
+        format!(
+            "## Highlights from {}",
+            literal_markdown(&book.title.replace('\n', " "))
+        ),
+        String::new(),
+        "<!-- Generated by ers. Personal notes belong outside this section. -->".into(),
+        String::new(),
+    ];
+    let mut previous = Vec::new();
+    for (index, annotation) in annotations.iter().enumerate() {
+        let headings = annotation_headings(annotation);
+        if index != 0 {
+            lines.extend(["---".into(), String::new()]);
+        }
+        lines.extend(heading_lines(&headings, &previous));
+        lines.extend(annotation_lines(annotation));
+        previous = headings;
+    }
+    lines.push(format!("<!-- ers:annotations:{}:end -->", book.id));
+    lines.join(newline).into_bytes()
+}
+
+fn marker_positions(content: &[u8], marker: &[u8]) -> Vec<usize> {
+    content
+        .windows(marker.len())
+        .enumerate()
+        .filter_map(|(index, bytes)| (bytes == marker).then_some(index))
+        .collect()
+}
+
+pub fn merge_section(request: MergeRequest<'_>) -> Result<MergedSection> {
+    let prefix = format!("<!-- ers:annotations:{}:", request.book_id);
+    let start_marker = format!("{prefix}start -->");
+    let end_marker = format!("{prefix}end -->");
+    let prefix_positions = marker_positions(request.content, prefix.as_bytes());
+    let content = if prefix_positions.is_empty() {
+        append_section(&request)?
+    } else {
+        replace_section(&request, &prefix_positions, &start_marker, &end_marker)?
+    };
+    Ok(MergedSection {
+        content,
+        digest: section_digest(request.section),
+    })
+}
+
+fn append_section(request: &MergeRequest<'_>) -> Result<Vec<u8>> {
+    if request.expected_digest.is_some() {
+        return Err(Error::Compatibility(
+            "The linked ers section is missing. Relink explicitly to append a new section.".into(),
+        ));
+    }
+    let separator = if request.content.windows(2).any(|pair| pair == b"\r\n") {
+        b"\r\n".as_slice()
+    } else {
+        b"\n".as_slice()
+    };
+    let mut merged = request.content.to_vec();
+    if !merged.is_empty() {
+        merged.extend_from_slice(separator);
+        merged.extend_from_slice(separator);
+    }
+    merged.extend_from_slice(request.section);
+    merged.extend_from_slice(separator);
+    Ok(merged)
+}
+
+fn replace_section(
+    request: &MergeRequest<'_>,
+    prefix_positions: &[usize],
+    start_marker: &str,
+    end_marker: &str,
+) -> Result<Vec<u8>> {
+    let starts = marker_positions(request.content, start_marker.as_bytes());
+    let ends = marker_positions(request.content, end_marker.as_bytes());
+    if prefix_positions.len() != 2 || starts.len() != 1 || ends.len() != 1 {
+        return Err(Error::Compatibility(
+            "The ers section has duplicate or malformed delimiters.".into(),
+        ));
+    }
+    let start = starts[0];
+    let end_start = ends[0];
+    if end_start <= start {
+        return Err(Error::Compatibility(
+            "The ers section delimiters are out of order.".into(),
+        ));
+    }
+    let end = end_start + end_marker.len();
+    let previous = section_digest(&request.content[start..end]);
+    let desired = section_digest(request.section);
+    if !request.overwrite
+        && Some(previous.as_str()) != request.expected_digest
+        && previous != desired
+    {
+        return Err(Error::Compatibility(
+            "The ers section changed outside ers. Confirm overwrite in O to replace it.".into(),
+        ));
+    }
+    let mut merged = request.content[..start].to_vec();
+    merged.extend_from_slice(request.section);
+    merged.extend_from_slice(&request.content[end..]);
+    Ok(merged)
+}
