@@ -54,6 +54,33 @@ impl InlineWindowBuilder {
 }
 
 #[test]
+fn partially_visible_inline_images_keep_their_negative_origin() {
+    let fixture = InlineWindowBuilder::new().build();
+    let row = *fixture.documents[0]
+        .layout
+        .image_maps
+        .keys()
+        .next()
+        .unwrap();
+    let targets = ers::images::visible_images(
+        &fixture.window,
+        DocumentRow {
+            document_index: 0,
+            row: row + 2,
+        },
+        2,
+    );
+    assert_eq!(
+        targets,
+        vec![ers::images::ImageTarget {
+            content_id: fixture.documents[0].parsed.source.content_id.clone(),
+            path: "same.png".into(),
+            row_offset: -2,
+        }]
+    );
+}
+
+#[test]
 fn inline_slots_do_not_change_saved_text_positions() {
     let mut builder = InlineWindowBuilder::new();
     let expanded = builder.build();
