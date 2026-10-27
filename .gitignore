@@ -11,3 +11,7 @@ build/**
 !build/gen_pkgbuild.sh
 
 .envrc
+/target/
+/.memory/
+/.pi/
+.DS_Store

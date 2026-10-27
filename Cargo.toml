@@ -1,0 +1,60 @@
+[package]
+name = "ers"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+license = "GPL-3.0-only"
+description = "Terminal ebook reader, a Rust port of epy"
+publish = false
+autobins = false
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.29"
+ratatui = { version = "0.30", default-features = false, features = ["crossterm_0_29", "layout-cache"] }
+crossbeam-channel = "0.5"
+signal-hook = "0.3"
+chrono = "0.4"
+uuid = { version = "1", features = ["v4"] }
+html-escape = "0.3"
+percent-encoding = "2"
+roxmltree = "0.21"
+simplecss = "0.2"
+zip = { version = "9.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+rusqlite = { version = "0.38", features = ["bundled", "fallible_uint"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha1 = "0.10"
+sha2 = "0.10"
+thiserror = "2"
+unicode-segmentation = "=1.12.0"
+tempfile = "3"
+base64 = "0.22"
+encoding_rs = "0.8"
+boko = { version = "=0.5.0", default-features = false }
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "gzip", "brotli", "deflate"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "net", "macros", "process", "io-util"] }
+url = "2"
+pcre2-sys = { package = "ers-pcre2-sys", path = "vendor/pcre2-sys" }
+unicode_names2 = "4"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico", "pnm", "tga", "tiff", "qoi"] }
+ratatui-image = { version = "11.1", default-features = false }
+resvg = { version = "0.49", default-features = false, features = ["text", "system-fonts", "memmap-fonts", "raster-images"] }
+open = { version = "5.4.5", default-features = false }
+shell-words = "1.1"
+webbrowser = { version = "1.2", features = ["hardened"] }
+process-wrap = { version = "10.0.1", default-features = false, features = ["tokio1", "process-session", "job-object", "kill-on-drop"] }
+which = "8"
+vte = "0.14"
+
+[patch.crates-io]
+crossterm = { path = "vendor/crossterm" }
+ratatui-image = { path = "vendor/ratatui-image" }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["termios"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+rustix = { version = "1", features = ["fs", "process", "pty"] }
+

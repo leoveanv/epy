@@ -1,0 +1,19 @@
+[package]
+name = "ers-pcre2-sys"
+version = "0.2.10"
+edition = "2024"
+rust-version = "1.91"
+license = "MIT AND (BSD-3-Clause WITH PCRE2-exception)"
+links = "pcre2-8"
+publish = false
+build = "build.rs"
+
+[lib]
+name = "pcre2_sys"
+path = "src/lib.rs"
+
+[dependencies]
+libc = "0.2"
+
+[build-dependencies]
+cc = { version = "1", features = ["parallel"] }
