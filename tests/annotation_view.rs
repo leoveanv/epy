@@ -170,6 +170,78 @@ fn editor_layout_keeps_wide_graphemes_intact() {
 }
 
 #[test]
+fn editor_moves_fitting_words_to_the_next_line() {
+    let editor = EditorState::new("first know", EditorOptions::default());
+    let layout = editor.layout(8);
+    assert_eq!(layout.lines, ["first ", "know"]);
+    assert_eq!((layout.cursor_row, layout.cursor_col), (1, 4));
+}
+
+#[test]
+fn editor_keeps_the_cursor_inside_a_wrapped_word() {
+    let mut editor = EditorState::new("first know", EditorOptions::default());
+    editor.handle(InputKey::Left);
+    editor.handle(InputKey::Left);
+    let layout = editor.layout(8);
+    assert_eq!((layout.cursor_row, layout.cursor_col), (1, 2));
+}
+
+#[test]
+fn editor_wraps_after_a_full_line_without_a_blank_space_line() {
+    let editor = EditorState::new("hello world", EditorOptions::default());
+    assert_eq!(editor.layout(5).lines, ["hello", "world", ""]);
+    assert_eq!(editor.text(), "hello world");
+}
+
+#[test]
+fn editor_positions_the_cursor_at_the_start_of_a_soft_wrapped_word() {
+    let mut editor = EditorState::new("hello  world", EditorOptions::default());
+    for _ in 0..5 {
+        editor.handle(InputKey::Left);
+    }
+    let layout = editor.layout(5);
+    assert_eq!((layout.cursor_row, layout.cursor_col), (1, 0));
+}
+
+#[test]
+fn editor_keeps_unicode_words_intact_when_wrapping() {
+    let editor = EditorState::new("go café", EditorOptions::default());
+    assert_eq!(editor.layout(6).lines, ["go ", "café"]);
+}
+
+#[test]
+fn editor_inserts_at_the_cursor_inside_a_wrapped_word() {
+    let mut editor = EditorState::new("first know", EditorOptions::default());
+    editor.handle(InputKey::Left);
+    editor.handle(InputKey::Left);
+    editor.insert("!");
+    let layout = editor.layout(8);
+    assert_eq!(layout.lines, ["first ", "kn!ow"]);
+    assert_eq!((layout.cursor_row, layout.cursor_col), (1, 3));
+    assert_eq!(editor.text(), "first kn!ow");
+}
+
+#[test]
+fn editor_keeps_an_explicit_newline_after_soft_wrapped_whitespace() {
+    let editor = EditorState::new("hello  \nnext", EditorOptions::default());
+    assert_eq!(editor.layout(5).lines, ["hello", "next"]);
+    assert_eq!(editor.text(), "hello  \nnext");
+}
+
+#[test]
+fn editor_preserves_newlines_and_indentation_when_wrapping() {
+    let editor = EditorState::new("head\n  zero know", EditorOptions::default());
+    assert_eq!(editor.layout(8).lines, ["head", "  zero ", "know"]);
+    assert_eq!(editor.text(), "head\n  zero know");
+}
+
+#[test]
+fn editor_splits_oversized_words_only_at_grapheme_boundaries() {
+    let editor = EditorState::new("a 👩‍🔬👩‍🔬👩‍🔬", EditorOptions::default());
+    assert_eq!(editor.layout(4).lines, ["a ", "👩‍🔬👩‍🔬", "👩‍🔬"]);
+}
+
+#[test]
 fn vertical_editor_motion_tracks_terminal_columns() {
     let mut editor = EditorState::new("中文abc\nx", EditorOptions::default());
     editor.handle(InputKey::Up);

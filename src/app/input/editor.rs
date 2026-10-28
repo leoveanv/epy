@@ -214,46 +214,133 @@ impl EditorState {
     }
 
     pub fn layout(&self, width: usize) -> EditorLayout {
-        let width = width.max(1);
-        let mut lines = vec![String::new()];
-        let mut row = 0;
-        let mut col = 0;
-        let mut cursor_row = 0;
-        let mut cursor_col = 0;
-        for (start, cluster) in self.text.grapheme_indices(true) {
-            let size = cell_width(cluster);
-            let newline = matches!(cluster, "\n" | "\r\n");
-            if !newline && col > 0 && col + size > width {
-                lines.push(String::new());
-                row += 1;
-                col = 0;
-            }
-            if start == self.cursor_byte {
-                cursor_row = row;
-                cursor_col = col;
-            }
-            if newline {
-                lines.push(String::new());
-                row += 1;
-                col = 0;
-            } else {
-                lines[row].push_str(cluster);
-                col += size;
-            }
+        let mut builder = EditorLayoutBuilder::new(width, self.cursor_byte, self.options.multiline);
+        let mut clusters = self.text.grapheme_indices(true).peekable();
+        while let Some((start, cluster)) = clusters.next() {
+            builder.push(start, cluster, clusters.clone());
         }
-        if self.cursor_byte == self.text.len() {
-            if col >= width {
-                lines.push(String::new());
-                row += 1;
-                col = 0;
-            }
-            cursor_row = row;
-            cursor_col = col;
-        }
-        EditorLayout {
-            lines,
-            cursor_row,
-            cursor_col,
+        builder.finish(self.text.len())
+    }
+}
+
+struct EditorLayoutBuilder {
+    layout: EditorLayout,
+    width: usize,
+    cursor_byte: usize,
+    column: usize,
+    multiline: bool,
+    word_start: bool,
+    skip_wrap_whitespace: bool,
+}
+
+impl EditorLayoutBuilder {
+    fn new(width: usize, cursor_byte: usize, multiline: bool) -> Self {
+        Self {
+            layout: EditorLayout {
+                lines: vec![String::new()],
+                cursor_row: 0,
+                cursor_col: 0,
+            },
+            width: width.max(1),
+            cursor_byte,
+            column: 0,
+            multiline,
+            word_start: true,
+            skip_wrap_whitespace: false,
         }
     }
+
+    fn push<'a>(
+        &mut self,
+        start: usize,
+        cluster: &str,
+        remaining: impl Iterator<Item = (usize, &'a str)>,
+    ) {
+        if self.consume_wrap_whitespace(start, cluster) {
+            return;
+        }
+        let newline = matches!(cluster, "\n" | "\r\n");
+        let whitespace = cluster.chars().all(char::is_whitespace);
+        let size = cell_width(cluster);
+        if self.multiline
+            && self.word_start
+            && !whitespace
+            && self.column > 0
+            && word_width(cluster, remaining) > self.width.saturating_sub(self.column)
+        {
+            self.next_line();
+        }
+        if !newline && self.column > 0 && self.column + size > self.width {
+            self.next_line();
+        }
+        self.record_cursor(start);
+        if newline {
+            self.next_line();
+        } else {
+            self.layout
+                .lines
+                .last_mut()
+                .expect("Editor layouts always contain a line")
+                .push_str(cluster);
+            self.column += size;
+        }
+        self.word_start = whitespace;
+    }
+
+    fn consume_wrap_whitespace(&mut self, start: usize, cluster: &str) -> bool {
+        let newline = matches!(cluster, "\n" | "\r\n");
+        let whitespace = cluster.chars().all(char::is_whitespace);
+        if self.multiline
+            && whitespace
+            && !newline
+            && (self.skip_wrap_whitespace
+                || (self.column > 0 && self.column + cell_width(cluster) > self.width))
+        {
+            if !self.skip_wrap_whitespace {
+                self.next_line();
+                self.skip_wrap_whitespace = true;
+            }
+            self.record_cursor(start);
+            self.word_start = true;
+            return true;
+        }
+        if self.skip_wrap_whitespace && newline {
+            self.record_cursor(start);
+            self.skip_wrap_whitespace = false;
+            self.word_start = true;
+            return true;
+        }
+        self.skip_wrap_whitespace = false;
+        false
+    }
+
+    fn next_line(&mut self) {
+        self.layout.lines.push(String::new());
+        self.column = 0;
+    }
+
+    fn record_cursor(&mut self, start: usize) {
+        if start == self.cursor_byte {
+            self.layout.cursor_row = self.layout.lines.len() - 1;
+            self.layout.cursor_col = self.column;
+        }
+    }
+
+    fn finish(mut self, text_length: usize) -> EditorLayout {
+        if self.cursor_byte == text_length {
+            if self.column >= self.width {
+                self.next_line();
+            }
+            self.record_cursor(text_length);
+        }
+        self.layout
+    }
+}
+
+fn word_width<'a>(first: &str, remaining: impl Iterator<Item = (usize, &'a str)>) -> usize {
+    remaining
+        .map(|(_, cluster)| cluster)
+        .take_while(|cluster| !cluster.chars().all(char::is_whitespace))
+        .map(cell_width)
+        .fold(cell_width(first), usize::saturating_add)
 }

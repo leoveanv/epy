@@ -6,7 +6,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
-use crate::annotations::{MarginInput, ReadingLayout, note_view_lines, place_notes};
+use crate::annotations::{MarginInput, PlacedNote, ReadingLayout, note_view_lines, place_notes};
 use crate::app::modes::annotations::{AnnotationMode, NoteEditor};
 use crate::app::{ReaderMode, ReaderModel};
 use crate::document::text::clip_text;
@@ -79,6 +79,21 @@ pub(in crate::terminal) fn draw_notes(
     let visible_count = inputs.len().min(max_visible_notes(height));
     let mut overflow = visible_count < inputs.len();
     let notes = place_notes(&inputs[..visible_count], geometry.notes_width);
+    draw_note_connectors(
+        frame,
+        &notes,
+        ConnectorGutter {
+            start_x: geometry.reading_x + model.view().width + 1,
+            end_x: notes_x.saturating_sub(2),
+            height,
+            ascii: model
+                .view()
+                .configuration
+                .settings
+                .annotation_ascii_connectors,
+            style: style.add_modifier(Modifier::DIM),
+        },
+    );
     for note in notes {
         let focused = model.focused_annotation() == Some(note.annotation_id.as_str())
             || draft.is_some_and(|editor| editor.target.id() == Some(&note.annotation_id))
@@ -88,40 +103,6 @@ pub(in crate::terminal) fn draw_notes(
         } else {
             style
         };
-        if note.source_row < height && note.row < height {
-            let connector = if model
-                .view()
-                .configuration
-                .settings
-                .annotation_ascii_connectors
-            {
-                ">"
-            } else {
-                "▶"
-            };
-            frame.render_widget(
-                Paragraph::new(connector).style(note_style),
-                Rect::new(notes_x.saturating_sub(2) as u16, note.row as u16, 1, 1),
-            );
-            if note.row > note.source_row {
-                let vertical = if model
-                    .view()
-                    .configuration
-                    .settings
-                    .annotation_ascii_connectors
-                {
-                    "|"
-                } else {
-                    "│"
-                };
-                for row in note.source_row..note.row {
-                    frame.render_widget(
-                        Paragraph::new(vertical).style(note_style),
-                        Rect::new(notes_x.saturating_sub(3) as u16, row as u16, 1, 1),
-                    );
-                }
-            }
-        }
         for (index, line) in note.lines.iter().enumerate() {
             let row = note.row + index;
             if row >= height {
@@ -146,6 +127,125 @@ pub(in crate::terminal) fn draw_notes(
             ),
         );
     }
+}
+
+#[derive(Clone, Copy)]
+struct ConnectorGutter {
+    start_x: usize,
+    end_x: usize,
+    height: usize,
+    ascii: bool,
+    style: Style,
+}
+
+struct ConnectorLane {
+    column: usize,
+    bottom: Option<usize>,
+}
+
+impl ConnectorLane {
+    fn available(&self, source_row: usize) -> bool {
+        self.bottom.is_none_or(|bottom| bottom < source_row)
+    }
+}
+
+fn draw_note_connectors(frame: &mut Frame<'_>, notes: &[PlacedNote], gutter: ConnectorGutter) {
+    let mut lanes = (gutter.start_x..=gutter.end_x)
+        .rev()
+        .step_by(2)
+        .chain((gutter.start_x..gutter.end_x).rev().step_by(2))
+        .map(|column| ConnectorLane {
+            column,
+            bottom: None,
+        })
+        .collect::<Vec<_>>();
+    for note in notes {
+        let Some(lane) = lanes
+            .iter()
+            .position(|lane| lane.available(note.source_row))
+            .or_else(|| {
+                lanes
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, lane)| lane.bottom)
+                    .map(|(index, _)| index)
+            })
+        else {
+            return;
+        };
+        let corner_x = lanes[lane].column;
+        if note.row > note.source_row {
+            lanes[lane].bottom = Some(note.row);
+        }
+        draw_note_connector(frame, note, gutter, corner_x);
+    }
+}
+
+fn draw_note_connector(
+    frame: &mut Frame<'_>,
+    note: &PlacedNote,
+    gutter: ConnectorGutter,
+    corner_x: usize,
+) {
+    if note.source_row >= gutter.height {
+        return;
+    }
+    draw_connector_dots(
+        frame,
+        gutter,
+        note.source_row,
+        gutter.start_x..gutter.end_x + 1,
+    );
+    if note.row <= note.source_row {
+        return;
+    }
+    draw_connector_cell(frame, gutter, corner_x, note.source_row, "╮");
+    for row in note.source_row + 1..note.row.min(gutter.height) {
+        draw_connector_cell(frame, gutter, corner_x, row, "┊");
+    }
+    if note.row < gutter.height {
+        draw_connector_cell(frame, gutter, corner_x, note.row, "╰");
+        draw_connector_dots(frame, gutter, note.row, corner_x + 1..gutter.end_x + 1);
+    }
+}
+
+fn draw_connector_dots(
+    frame: &mut Frame<'_>,
+    gutter: ConnectorGutter,
+    row: usize,
+    columns: Range<usize>,
+) {
+    for column in columns {
+        let Some(cell) = frame.buffer_mut().cell_mut((column as u16, row as u16)) else {
+            continue;
+        };
+        if matches!(cell.symbol(), " " | ".") {
+            cell.set_symbol(".").set_style(gutter.style);
+        }
+    }
+}
+
+fn draw_connector_cell(
+    frame: &mut Frame<'_>,
+    gutter: ConnectorGutter,
+    column: usize,
+    row: usize,
+    symbol: &str,
+) {
+    let Some(cell) = frame.buffer_mut().cell_mut((column as u16, row as u16)) else {
+        return;
+    };
+    // #NOTE: When all gutter lanes are occupied, explicit junctions preserve each note's branch.
+    let symbol = match (cell.symbol(), symbol) {
+        ("╰" | "+", "┊") | ("┊" | ":", "╰") | ("├", _) => "├",
+        _ => symbol,
+    };
+    let symbol = if gutter.ascii {
+        if symbol == "┊" { ":" } else { "+" }
+    } else {
+        symbol
+    };
+    cell.set_symbol(symbol).set_style(gutter.style);
 }
 
 // #NOTE: Every note occupies at least one row and one spacer.
@@ -218,7 +318,7 @@ impl<'a> NoteRows<'a> {
 }
 
 fn note_row(model: &ReaderModel, anchor: &crate::annotations::TextAnchor) -> Option<usize> {
-    (0..model.reading_height()).find(|offset| {
+    (0..model.reading_height()).rev().find(|offset| {
         model.visible_row(*offset).is_some_and(|visible| {
             visible.document.parsed.source.content_id == anchor.content_id()
                 && visible
@@ -377,7 +477,12 @@ fn draw_editor(frame: &mut Frame<'_>, editor: &NoteEditor, style: Style) {
     let area = frame.area();
     let height = area.height.saturating_sub(2).min(11);
     let top = area.height.saturating_sub(height + 1);
-    let rectangle = Rect::new(1.min(area.width), top, area.width.saturating_sub(2), height);
+    let rectangle = Rect::new(
+        1.min(area.width),
+        top,
+        area.width.saturating_sub(2).min(72),
+        height,
+    );
     frame.render_widget(Clear, rectangle);
     let block = Block::default()
         .title("Note | Enter newline  Tab controls  Esc cancel")
