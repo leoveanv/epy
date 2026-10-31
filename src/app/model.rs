@@ -1195,28 +1195,24 @@ impl ReaderModel {
     fn open_help(&mut self) {
         self.open_dialog(
             "ers Help",
-            self.configuration
-                .bindings
-                .clone()
-                .effective_keys(Command::Quit)
-                .ok()
-                .map_or_else(Vec::new, |_| {
-                    Command::all()
-                        .iter()
-                        .map(|command| DialogItem {
-                            label: format!(
-                                "{}  {}",
-                                self.configuration
-                                    .bindings
-                                    .binding(*command)
-                                    .unwrap_or_default()
-                                    .escape_default(),
-                                command.name()
-                            ),
-                            target: None,
-                        })
-                        .collect()
-                }),
+            Command::all()
+                .iter()
+                .map(|command| DialogItem {
+                    label: format!(
+                        "{}  {}",
+                        self.configuration
+                            .bindings
+                            .effective_keys(*command)
+                            .unwrap_or_default()
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        command.name()
+                    ),
+                    target: None,
+                })
+                .collect(),
         );
     }
 }

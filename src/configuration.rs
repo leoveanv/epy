@@ -128,6 +128,25 @@ pub enum InputKey {
     BackTab,
 }
 
+impl std::fmt::Display for InputKey {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Character(' ') => formatter.write_str("Space"),
+            Self::Character(character @ '\0'..='\u{1f}') => {
+                write!(formatter, "Ctrl+{}", (*character as u8 + b'@') as char)
+            }
+            Self::Character('\u{7f}') => formatter.write_str("Backspace"),
+            Self::Character(character) if character.is_control() => {
+                write!(formatter, "{}", character.escape_unicode())
+            }
+            Self::Character(character) => write!(formatter, "{character}"),
+            Self::ControlI => formatter.write_str("Ctrl+I"),
+            Self::BackTab => formatter.write_str("Shift+Tab"),
+            key => write!(formatter, "{key:?}"),
+        }
+    }
+}
+
 impl InputKey {
     pub const fn from_character(character: char) -> Self {
         match character {
